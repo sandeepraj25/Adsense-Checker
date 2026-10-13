@@ -1,4 +1,4 @@
-# Verdict — AdSense Eligibility Checker
+# AdSense Eligibility Checker
 
 A pre-review AdSense audit tool: accounts, three monthly plans, three payment
 gateways, an admin panel, a real website analyser, and stored reports, behind
