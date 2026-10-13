@@ -68,7 +68,7 @@ export function StatusPill({ status }: { status: Status }) {
   return (
     <span
       className={cn(
-        "t-data rounded-md px-2 py-0.5 text-[0.6875rem] font-medium ring-1",
+        "t-data rounded-md px-2 py-0.5 text-[0.75rem] font-medium ring-1",
         theme.bg,
         theme.ring,
         theme.text,

@@ -2,25 +2,42 @@
   "name": "adsense-eligibility-checker",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22.5.0"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "verify": "node scripts/verify.mjs",
+    "test:auth-flow": "npm run build && node scripts/auth-flow-test.mjs",
+    "test:profile": "npm run build && node scripts/profile-test.mjs",
+    "test:checkout": "npm run build && node scripts/checkout-test.mjs",
+    "test:otp": "npm run build && node scripts/otp-test.mjs",
+    "test:pricing": "npm run build && node scripts/pricing-test.mjs",
+    "test:chat": "npm run build && node scripts/chat-test.mjs",
+    "test:alerts": "npm run build && node scripts/alerts-test.mjs",
+    "test:analytics": "npm run build && node scripts/analytics-test.mjs",
+    "test:homepage": "npm run build && node scripts/homepage-test.mjs"
   },
   "dependencies": {
     "framer-motion": "^11.15.0",
+    "libphonenumber-js": "1.13.12",
     "lucide-react": "^0.469.0",
     "next": "15.1.6",
     "react": "19.0.0",
-    "react-dom": "19.0.0"
+    "react-dom": "19.0.0",
+    "sharp": "^0.33.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.0.0",
     "@types/node": "^22.10.5",
     "@types/react": "^19.0.7",
     "@types/react-dom": "^19.0.3",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.4.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.3"
   }

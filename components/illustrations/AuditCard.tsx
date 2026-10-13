@@ -33,31 +33,31 @@ export function AuditCard() {
       {/* cast glow */}
       <div
         aria-hidden
-        className="absolute -inset-8 -z-10 rounded-[2.5rem] bg-[radial-gradient(60%_60%_at_60%_40%,rgba(124,92,255,0.3),transparent_70%)] blur-2xl"
+        className="absolute -inset-8 -z-10 rounded-xl bg-[radial-gradient(60%_60%_at_60%_40%,rgba(124,92,255,0.3),transparent_70%)] blur-2xl"
       />
 
       <motion.div
         initial={reduce ? undefined : { opacity: 0, y: 26, rotateX: 6 }}
         animate={reduce ? undefined : { opacity: 1, y: 0, rotateX: 0 }}
         transition={{ duration: 0.95, ease: [0.16, 1, 0.3, 1], delay: 0.15 }}
-        className="glass grad-hairline edge-light relative overflow-hidden rounded-[1.75rem] shadow-[0_40px_120px_-40px_rgba(10,12,22,0.95)]"
+        className="glass grad-hairline edge-light relative overflow-hidden rounded-[1.75rem]"
       >
         {!reduce ? <span className="scan-sweep z-20" aria-hidden /> : null}
 
         {/* chrome */}
-        <div className="flex items-center justify-between border-b border-white/[0.07] px-5 py-3.5">
+        <div className="flex items-center justify-between border-b border-ink-700 px-5 py-3.5">
           <div className="flex items-center gap-2.5">
             <span className="flex gap-1.5" aria-hidden>
-              <span className="size-2 rounded-full bg-white/12" />
-              <span className="size-2 rounded-full bg-white/12" />
-              <span className="size-2 rounded-full bg-white/12" />
+              <span className="size-2 rounded-full bg-ink-900" />
+              <span className="size-2 rounded-full bg-ink-900" />
+              <span className="size-2 rounded-full bg-ink-900" />
             </span>
-            <span className="t-data text-[0.6875rem] text-cloud-600">
+            <span className="t-data text-[0.75rem] text-cloud-600">
               eligibility report
             </span>
           </div>
 
-          <span className="t-data flex items-center gap-1.5 text-[0.6875rem] text-cloud-400">
+          <span className="t-data flex items-center gap-1.5 text-[0.75rem] text-cloud-400">
             {done ? (
               <>
                 <span className="relative flex size-1.5" aria-hidden>
@@ -99,7 +99,7 @@ export function AuditCard() {
 
         {/* streamed checks */}
         <motion.ul
-          className="border-t border-white/[0.06]"
+          className="border-t border-ink-700"
           initial="hidden"
           animate="shown"
           variants={{
@@ -114,7 +114,7 @@ export function AuditCard() {
                 shown: reduce ? {} : { opacity: 1, x: 0 },
               }}
               transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-              className="flex items-center gap-3 border-b border-white/[0.04] px-5 py-2.5 last:border-b-0 sm:px-7"
+              className="flex items-center gap-3 border-b border-ink-700 px-5 py-2.5 last:border-b-0 sm:px-7"
             >
               <StatusIcon status={check.status} />
               <span className="flex-1 truncate text-[0.875rem] text-cloud-200">
@@ -132,10 +132,10 @@ export function AuditCard() {
         initial={reduce ? undefined : { opacity: 0, scale: 0.9 }}
         animate={reduce ? undefined : { opacity: 1, scale: 1 }}
         transition={{ duration: 0.6, delay: 1.5, ease: [0.16, 1, 0.3, 1] }}
-        className="glass absolute -left-4 top-[46%] hidden items-center gap-2 rounded-xl px-3 py-2 shadow-xl lg:flex"
+        className="glass absolute -left-4 top-[46%] hidden items-center gap-2 rounded-xl px-3 py-2 shadow-sm lg:flex"
       >
         <ShieldAlert className="size-3.5 text-rose-400" />
-        <span className="t-data text-[0.6875rem] text-cloud-200">
+        <span className="t-data text-[0.75rem] text-cloud-200">
           contact page missing
         </span>
       </motion.div>
@@ -145,9 +145,9 @@ export function AuditCard() {
         initial={reduce ? undefined : { opacity: 0, scale: 0.9 }}
         animate={reduce ? undefined : { opacity: 1, scale: 1 }}
         transition={{ duration: 0.6, delay: 1.8, ease: [0.16, 1, 0.3, 1] }}
-        className="glass absolute -right-3 top-6 hidden flex-col rounded-xl px-3.5 py-2.5 shadow-xl lg:flex"
+        className="glass absolute -right-3 top-6 hidden flex-col rounded-xl px-3.5 py-2.5 shadow-sm lg:flex"
       >
-        <span className="t-eyebrow text-[0.5625rem] text-cloud-600">
+        <span className="text-[0.8125rem] font-medium text-cloud-600">
           policy set
         </span>
         <span className="t-data mt-1 text-[0.8125rem] text-cloud-50">

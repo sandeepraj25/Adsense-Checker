@@ -20,7 +20,7 @@ export function GlassCard({
   return (
     <Tag
       className={cn(
-        "glass relative overflow-hidden rounded-2xl",
+        "glass relative overflow-hidden rounded-xl",
         lit && "edge-light",
         hairline && "grad-hairline",
         className,

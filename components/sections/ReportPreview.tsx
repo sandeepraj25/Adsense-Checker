@@ -24,25 +24,20 @@ export function ApprovalGallery() {
       id="approvals"
       className="relative overflow-hidden py-24 sm:py-32"
     >
-      {/* Background glow */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute left-1/2 top-0 h-[500px] w-[900px] -translate-x-1/2 rounded-full bg-violet-500/[0.06] blur-[160px]"
-      />
 
       <Container size="wide">
         {/* Heading */}
         <Reveal>
           <div className="mx-auto max-w-3xl text-center">
-            <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-violet-400/20 bg-violet-500/10 px-4 py-2">
-              <Sparkles className="size-4 text-violet-300" />
+            <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-azure-500/20 bg-azure-500/10 px-4 py-2">
+              <Sparkles className="size-4 text-azure-600" />
 
-              <span className="text-xs font-semibold tracking-wide text-violet-200">
-                REAL RESULTS
+              <span className="text-xs font-semibold tracking-wide text-azure-600">
+                Real results
               </span>
             </div>
 
-            <h2 className="font-[var(--font-poppins)] text-4xl font-bold tracking-tight text-white sm:text-5xl lg:text-6xl">
+            <h2 className=" text-4xl font-bold tracking-tight text-cloud-50 sm:text-5xl lg:text-6xl">
               Websites that got{" "}
               <span className="grad-text">approved</span>
             </h2>
@@ -61,7 +56,7 @@ export function ApprovalGallery() {
             {[...approvals, ...approvals].map((image, index) => (
               <div
                 key={`top-${index}`}
-                className="group relative h-[260px] w-[220px] shrink-0 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04] shadow-2xl shadow-black/30 sm:h-[320px] sm:w-[280px]"
+                className="group relative h-[260px] w-[220px] shrink-0 overflow-hidden rounded-xl border border-ink-700 bg-ink-900 shadow-sm shadow-black/30 sm:h-[320px] sm:w-[280px]"
               >
                 <Image
                   src={image}
@@ -84,7 +79,7 @@ export function ApprovalGallery() {
             ].map((image, index) => (
               <div
                 key={`bottom-${index}`}
-                className="group relative h-[260px] w-[220px] shrink-0 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04] shadow-2xl shadow-black/30 sm:h-[320px] sm:w-[280px]"
+                className="group relative h-[260px] w-[220px] shrink-0 overflow-hidden rounded-xl border border-ink-700 bg-ink-900 shadow-sm shadow-black/30 sm:h-[320px] sm:w-[280px]"
               >
                 <Image
                   src={image}
@@ -109,11 +104,11 @@ export function ApprovalGallery() {
         <Reveal delay={0.2}>
           <div className="mx-auto mt-24 max-w-5xl">
             <div className="mb-10 text-center">
-              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-violet-300">
-                CUSTOMER REVIEWS
+              <p className="text-sm font-semibold tracking-[0.2em] text-azure-600">
+                Customer reviews
               </p>
 
-              <h3 className="mt-4 font-[var(--font-poppins)] text-3xl font-bold text-white sm:text-5xl">
+              <h3 className="mt-4 text-3xl font-bold text-cloud-50 sm:text-5xl">
                 Hear it from our{" "}
                 <span className="grad-text">users</span>
               </h3>
@@ -123,20 +118,19 @@ export function ApprovalGallery() {
               </p>
             </div>
 
-            <div className="relative aspect-video overflow-hidden rounded-[2rem] border border-white/10 bg-gradient-to-br from-violet-500/10 via-ink-900 to-blue-500/10 p-1 shadow-[0_30px_100px_-40px_rgba(124,92,255,0.5)]">
-              <div className="relative flex h-full w-full flex-col items-center justify-center overflow-hidden rounded-[1.8rem] bg-black/40 backdrop-blur-xl">
-                <div className="pointer-events-none absolute left-1/2 top-1/2 h-[300px] w-[300px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-violet-500/15 blur-[100px]" />
+            <div className="relative aspect-video overflow-hidden rounded-xl border border-ink-700 bg-gradient-to-br from-violet-500/10 via-ink-900 to-blue-500/10 p-1">
+              <div className="relative flex h-full w-full flex-col items-center justify-center overflow-hidden rounded-xl bg-ink-900 backdrop-blur-xl">
 
-                <div className="relative z-10 flex size-20 items-center justify-center rounded-full border border-white/15 bg-white/10 backdrop-blur-xl">
-                  <Play className="ml-1 size-8 fill-white text-white" />
+                <div className="relative z-10 flex size-20 items-center justify-center rounded-full border border-ink-700 bg-ink-900 backdrop-blur-xl">
+                  <Play className="ml-1 size-8 fill-white text-cloud-50" />
                 </div>
 
-                <h4 className="relative z-10 mt-7 font-[var(--font-poppins)] text-2xl font-bold text-white sm:text-4xl">
+                <h4 className="relative z-10 mt-7 text-2xl font-bold text-cloud-50 sm:text-4xl">
                   Customer Review Videos
                 </h4>
 
-                <div className="relative z-10 mt-7 rounded-full border border-violet-400/20 bg-violet-500/10 px-5 py-2">
-                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-300">
+                <div className="relative z-10 mt-7 rounded-full border border-azure-500/20 bg-azure-500/10 px-5 py-2">
+                  <span className="text-xs font-semibold tracking-[0.18em] text-azure-600">
                     Coming Soon
                   </span>
                 </div>

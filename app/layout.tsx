@@ -1,12 +1,8 @@
 import type { Metadata, Viewport } from "next";
-import { Bricolage_Grotesque, Inter, JetBrains_Mono } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
-
-const bricolage = Bricolage_Grotesque({
-  subsets: ["latin"],
-  display: "swap",
-  variable: "--font-bricolage",
-});
+import { ChatWidget } from "@/components/chat/ChatWidget";
+import { Tracker } from "@/components/analytics/Tracker";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -21,14 +17,29 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Verdict — Know your AdSense answer before you apply",
+  title: {
+    default: "AdSense Check",
+    template: "%s | AdSense Check",
+  },
+
   description:
-    "Paste your URL and run the 34 checks Google's reviewers apply. Get a score, the blockers, and the exact fix for each one.",
+    "Check your website's AdSense readiness before you apply. Get detailed insights, blockers, and actionable fixes.",
+
+  icons: {
+    icon: [
+      {
+        url: "/favicon.png",
+        type: "image/png",
+      },
+    ],
+    shortcut: "/favicon.png",
+    apple: "/favicon.png",
+  },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#07080f",
-  colorScheme: "dark",
+  themeColor: "#ffffff",
+  colorScheme: "light",
 };
 
 export default function RootLayout({
@@ -39,9 +50,16 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${bricolage.variable} ${inter.variable} ${jetbrains.variable}`}
+      className={`${inter.variable} ${jetbrains.variable}`}
     >
-      <body className="bg-ink-950 text-cloud-50 antialiased">{children}</body>
+      <body className="bg-white text-cloud-50 antialiased">
+        {children}
+        {/* Support chat on public and customer pages; it hides itself on
+            admin, checkout and invoice pages. */}
+        <ChatWidget />
+        {/* First-party, cookie-free visit analytics (off on admin pages). */}
+        <Tracker />
+      </body>
     </html>
   );
 }

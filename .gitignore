@@ -8,3 +8,13 @@ npm-debug.log*
 .env*
 next-env.d.ts
 tsconfig.tsbuildinfo
+
+# the .env.example template is meant to be committed; real .env files are not
+!.env.example
+
+# local SQLite database and anything else written at runtime
+/data
+*.db
+*.db-journal
+*.db-wal
+*.db-shm

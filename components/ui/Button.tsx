@@ -8,20 +8,20 @@ type Size = "sm" | "md" | "lg";
 
 const base =
   "group relative inline-flex items-center justify-center gap-2 rounded-xl font-medium " +
-  "transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] " +
+  "transition-colors duration-200 " +
   "disabled:cursor-not-allowed disabled:opacity-55";
 
 const variants: Record<Variant, string> = {
-  /* The one loud element: brand gradient with a lifted glow on hover. */
+  /* The one solid element on a surface. Flat indigo, a hairline shadow —
+     no glow, no lift: the colour already carries the emphasis. */
   primary:
-    "grad-brand text-white shadow-[0_10px_36px_-12px_rgba(124,92,255,0.85)] " +
-    "hover:shadow-[0_16px_48px_-10px_rgba(124,92,255,0.95)] hover:-translate-y-0.5 " +
-    "active:translate-y-0",
+    "bg-azure-500 text-white shadow-[0_1px_2px_rgba(24,24,27,0.12)] " +
+    "hover:bg-azure-600 active:bg-azure-600",
   ghost:
-    "glass text-cloud-50 hover:border-white/16 hover:bg-white/[0.07] " +
-    "hover:-translate-y-0.5 active:translate-y-0",
+    "border border-ink-700 bg-white text-cloud-50 shadow-[0_1px_2px_rgba(24,24,27,0.04)] " +
+    "hover:border-zinc-300 hover:bg-ink-900",
   quiet:
-    "text-cloud-400 hover:text-cloud-50 hover:bg-white/[0.045] border border-transparent",
+    "text-cloud-300 hover:text-cloud-50 hover:bg-ink-800 border border-transparent",
 };
 
 const sizes: Record<Size, string> = {

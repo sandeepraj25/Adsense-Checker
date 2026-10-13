@@ -157,29 +157,43 @@ export const heroChecks: Array<{ label: string; status: Status }> = [
   { label: "Crawler access open", status: "pass" },
 ];
 
-export const stats = [
-  {
-    value: 34,
-    suffix: "",
-    label: "Checks per scan",
-    note: "Mapped to published policy",
-  },
-  {
-    value: 18,
-    suffix: "s",
-    label: "Median scan time",
-    note: "Full crawl of 50 pages",
-  },
-  {
-    value: 71,
-    suffix: "%",
-    label: "First-try approvals",
-    note: "Sites that fixed every blocker",
-  },
-  {
-    value: 12400,
-    suffix: "+",
-    label: "Sites scanned",
-    note: "Since launch",
-  },
-];
+/**
+ * Homepage figures. Every one is a fact about the product, computed from
+ * the code — the earlier set ("71% first-try approvals", "12,400+ sites
+ * scanned", "18s median") had no data source anywhere in the app, and
+ * "34 checks / 50 pages" contradicted the engine. If you have real
+ * measured numbers, they can go back here with their source noted.
+ */
+export function productStats(input: {
+  totalChecks: number;
+  freeChecks: number;
+  freeScans: number;
+  areas: number;
+}) {
+  return [
+    {
+      value: input.totalChecks,
+      suffix: "",
+      label: "Checks in a full audit",
+      note: `${input.freeChecks} included on the Free plan`,
+    },
+    {
+      value: input.areas,
+      suffix: "",
+      label: "Areas reviewed",
+      note: "Pages, content, setup, mobile, policy",
+    },
+    {
+      value: input.freeScans,
+      suffix: "",
+      label: "Free scans every month",
+      note: "No card needed to start",
+    },
+    {
+      value: 0,
+      suffix: "",
+      label: "Code to install",
+      note: "Nothing added to your site",
+    },
+  ];
+}

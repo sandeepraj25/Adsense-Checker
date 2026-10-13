@@ -25,15 +25,13 @@ export function TrustBar() {
   const marqueePlatforms = [...platforms, ...platforms];
 
   return (
-    <section className="relative overflow-hidden border-y border-white/[0.06] bg-ink-900/40 py-10 sm:py-12">
+    <section className="relative overflow-hidden border-y border-ink-700 bg-ink-900 py-6">
       <Container size="wide">
-        <div className="flex flex-col items-center gap-10 lg:flex-row lg:gap-16">
+        <div className="flex flex-col items-center gap-4 lg:flex-row lg:gap-12">
           {/* TITLE */}
           <Reveal className="shrink-0">
-            <h2 className="font-[var(--font-poppins)] text-center text-4xl font-extrabold leading-[0.95] tracking-tight text-white sm:text-5xl lg:text-left">
-              Reads Sites
-              <br />
-              <span className="grad-text">Built On</span>
+            <h2 className="text-center text-[1rem] font-semibold leading-snug text-cloud-50 lg:max-w-[10rem] lg:text-left">
+              Works with sites built on
             </h2>
           </Reveal>
 
@@ -47,18 +45,18 @@ export function TrustBar() {
               <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-12 bg-gradient-to-l from-ink-900 via-ink-900/80 to-transparent sm:w-20" />
 
               {/* LOGO ANIMATION */}
-              <div className="flex w-max animate-platform-marquee items-center gap-6 py-4 sm:gap-10">
+              <div className="flex w-max animate-platform-marquee items-center gap-6 py-2 sm:gap-8">
                 {marqueePlatforms.map((platform, index) => (
                   <div
                     key={`${platform.name}-${index}`}
-                    className="flex h-20 w-24 shrink-0 items-center justify-center"
+                    className="flex h-14 w-20 shrink-0 items-center justify-center"
                     title={platform.name}
                     aria-label={platform.name}
                   >
                     <img
                       src={platform.logo}
                       alt={platform.name}
-                      className="h-12 w-12 object-contain transition-transform duration-300 hover:scale-110 sm:h-14 sm:w-14"
+                      className="h-9 w-9 object-contain"
                     />
                   </div>
                 ))}

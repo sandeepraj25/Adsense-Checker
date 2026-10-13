@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { ArrowRight, Globe, Loader2 } from "lucide-react";
 import { useScan } from "@/components/ScanContext";
 import { normalizeDomain } from "@/lib/domain";
@@ -16,6 +17,7 @@ export function UrlForm({
   cta?: string;
 }) {
   const { runScan } = useScan();
+  const router = useRouter();
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -29,21 +31,19 @@ export function UrlForm({
     const domain = normalizeDomain(value);
 
     if (!domain) {
-      setError("Enter a domain like yourdomain.com");
+      setError("Enter your valid domain (e.g., skillforever.com).");
       return;
     }
 
     setError(null);
     setBusy(true);
 
-    window.setTimeout(() => {
-      runScan(domain);
-      setBusy(false);
-
-      document
-        .getElementById("report")
-        ?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 1100);
+    // Keeps any on-page preview in sync, then hands off to /start, which
+    // decides where this visitor goes: signup if anonymous, straight to
+    // the checker if they already have a session and an active plan.
+    // `busy` is intentionally left true — the page is being replaced.
+    runScan(domain);
+    router.push(`/start?url=${encodeURIComponent(domain)}`);
   }
 
   return (
@@ -52,10 +52,9 @@ export function UrlForm({
         onSubmit={handleSubmit}
         noValidate
         className={cn(
-          "group flex w-full flex-col gap-2 rounded-2xl border border-white/40 bg-white/[0.04] p-2 sm:flex-row sm:items-center",
-          "shadow-[0_15px_50px_-20px_rgba(0,0,0,0.7)]",
-          "transition-all duration-300",
-          "focus-within:border-white/70 focus-within:bg-white/[0.06] focus-within:shadow-[0_0_0_1px_rgba(255,255,255,0.12),0_18px_60px_-24px_rgba(124,92,255,0.6)]",
+          "group flex w-full flex-col gap-2 rounded-xl border border-zinc-300 bg-white p-1.5 sm:flex-row sm:items-center",
+          "shadow-[0_1px_2px_rgba(24,24,27,0.05)] transition-colors",
+          "focus-within:border-azure-500 focus-within:ring-3 focus-within:ring-azure-500/15",
         )}
       >
         <label htmlFor={`url-${size}`} className="sr-only">
@@ -64,7 +63,7 @@ export function UrlForm({
 
         <div className="flex flex-1 items-center gap-3 px-4">
           <Globe
-            className="size-5 shrink-0 text-white/50 transition-colors duration-300 group-focus-within:text-white/90"
+            className="size-5 shrink-0 text-cloud-400"
             aria-hidden
           />
 
@@ -80,12 +79,12 @@ export function UrlForm({
               setValue(e.target.value);
               if (error) setError(null);
             }}
-            placeholder="yourdomain.com"
+            placeholder="Enter Your Valid Domain Name"
             aria-invalid={Boolean(error)}
             aria-describedby={error ? `url-${size}-error` : undefined}
             className={cn(
-              "w-full bg-transparent font-sans font-medium text-white/90 outline-none",
-              "placeholder:text-white/45",
+              "w-full bg-transparent font-sans font-medium text-cloud-50 outline-none",
+              "placeholder:text-cloud-400",
               tall ? "h-14 text-[1.05rem]" : "h-11 text-[0.95rem]",
             )}
           />
@@ -95,11 +94,8 @@ export function UrlForm({
           type="submit"
           disabled={busy}
           className={cn(
-            "grad-brand relative inline-flex shrink-0 items-center justify-center gap-2 rounded-xl px-7 font-semibold text-white",
-            "shadow-[0_10px_35px_-10px_rgba(124,92,255,0.8)]",
-            "transition-all duration-300",
-            "hover:-translate-y-0.5 hover:shadow-[0_18px_45px_-10px_rgba(124,92,255,1)]",
-            "active:translate-y-0 active:scale-[0.98]",
+            "relative inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-azure-500 px-6 font-semibold text-white",
+            "transition-colors hover:bg-azure-600",
             "disabled:opacity-70",
             tall ? "h-14 text-[1rem]" : "h-11 text-[0.9rem]",
           )}
@@ -131,9 +127,8 @@ export function UrlForm({
             {error}
           </p>
         ) : (
-          <p className="font-sans text-sm font-medium text-white/65">
-            Enter Your Website Link and check Adsense Approval.
-          </p>
+          <p className="font-sans text-sm text-cloud-400">
+            Enter your valid domain (e.g., skillforever.com).          </p>
         )}
       </div>
     </div>

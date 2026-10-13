@@ -69,13 +69,10 @@ export function ScoreArc({
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
         <defs>
           <linearGradient id={`arc-${uid}`} x1="0" y1="1" x2="1" y2="0">
-            <stop offset="0%" stopColor="#4F7DFF" />
-            <stop offset="52%" stopColor="#7C5CFF" />
-            <stop offset="100%" stopColor="#B45CFF" />
+            <stop offset="0%" stopColor="#6366F1" />
+            <stop offset="52%" stopColor="#4F46E5" />
+            <stop offset="100%" stopColor="#4338CA" />
           </linearGradient>
-          <filter id={`glow-${uid}`} x="-40%" y="-40%" width="180%" height="180%">
-            <feGaussianBlur stdDeviation="7" />
-          </filter>
         </defs>
 
         {/* tick ring */}
@@ -87,7 +84,7 @@ export function ScoreArc({
               y1={t.y1}
               x2={t.x2}
               y2={t.y2}
-              stroke={t.passed ? "#9AB4FF" : "#2A3057"}
+              stroke={t.passed ? "#818CF8" : "#E4E4E7"}
               opacity={t.passed ? (t.major ? 0.95 : 0.6) : 0.75}
             />
           ))}
@@ -100,32 +97,10 @@ export function ScoreArc({
             cy={cy}
             r={r}
             fill="none"
-            stroke="#1D2243"
+            stroke="#EEF0F4"
             strokeWidth={stroke}
             strokeLinecap="round"
             strokeDasharray={`${arcLength} ${circumference}`}
-          />
-
-          {/* glow beneath the progress arc */}
-          <motion.circle
-            cx={cx}
-            cy={cy}
-            r={r}
-            fill="none"
-            stroke={`url(#arc-${uid})`}
-            strokeWidth={stroke}
-            strokeLinecap="round"
-            strokeDasharray={`${arcLength} ${circumference}`}
-            filter={`url(#glow-${uid})`}
-            opacity={0.5}
-            initial={{ strokeDashoffset: arcLength }}
-            animate={{ strokeDashoffset: arcLength * (1 - pct) }}
-            transition={{
-              duration: reduce ? 0 : 1.5,
-              ease: [0.16, 1, 0.3, 1],
-              delay: reduce ? 0 : 0.25,
-            }}
-            key={`glow-run-${replayKey}`}
           />
 
           {/* progress arc */}

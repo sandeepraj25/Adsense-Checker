@@ -7,7 +7,7 @@ import { cn } from "@/lib/cn";
 export function Eyebrow({
   children,
   className,
-  dot = true,
+  dot = false,
 }: {
   children: React.ReactNode;
   className?: string;
