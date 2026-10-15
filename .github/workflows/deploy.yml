@@ -14,6 +14,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -32,18 +33,18 @@ jobs:
       - name: Configure SSH
         env:
           SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
         run: |
           mkdir -p ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-ssh-keyscan -4 -H 130.210.54.193 >> ~/.ssh/known_hosts
+          ssh-keyscan -4 -H 130.210.54.193 >> ~/.ssh/known_hosts
+
       - name: Deploy on server
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
         run: |
-          ssh -i ~/.ssh/deploy_key "$SERVER_USER@$SERVER_HOST" 'bash -se' <<'REMOTE'
+          ssh -o ConnectTimeout=15 -i ~/.ssh/deploy_key "$SERVER_USER@$SERVER_HOST" 'bash -se' <<'REMOTE'
             set -e
             cd /home/opc/Adsense-Checker
             git pull --ff-only origin main
