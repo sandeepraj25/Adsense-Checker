@@ -116,8 +116,8 @@ export default async function CheckoutSuccessPage({
   }
 
   return (
-    <div className="min-h-screen bg-ink-900">
-      <header className="border-b border-ink-700 bg-white">
+<div className="min-h-screen bg-slate-50">
+<header className="sticky top-0 z-20 border-b border-slate-200/80 bg-white/95 backdrop-blur-md">
         <div className="mx-auto flex h-16 w-full max-w-6xl items-center px-4 sm:px-8">
           <Link href="/" aria-label="Home">
             <Image src="/logo.png" alt="AdSense Checker" width={2078} height={757} sizes="110px" className="h-10 w-auto" priority />

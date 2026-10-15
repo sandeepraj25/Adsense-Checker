@@ -280,7 +280,7 @@ export function CheckoutForm({
           <Input
             id={`${formId}-name`}
             label="Full legal name"
-            hint="As it should appear on your invoice."
+            
             autoComplete="name"
             value={values.name}
             error={fieldError("name")}
@@ -305,7 +305,7 @@ export function CheckoutForm({
               hint={
                 differentEmail
                   ? `Receipts and invoices go here. You still log in with ${accountEmail}.`
-                  : "Receipts and invoices go here. This is also your login email."
+                  : "Invoices Sent Here."
               }
             />
           </div>
@@ -456,13 +456,7 @@ export function CheckoutForm({
                 })}
               </div>
 
-              <p className="mt-3 text-[0.8125rem] leading-relaxed text-cloud-400">
-                {chosen.simulated
-                  ? "Test mode: the payment is simulated locally. No money moves."
-                  : chosen.environment === "sandbox"
-                    ? `${chosen.label} is in sandbox mode, so this is a test order, not a real payment.`
-                    : `${chosen.blurb} Your plan activates only after ${chosen.label} confirms the payment to our server.`}
-              </p>
+              
 
               <div
                 ref={errorSummary}

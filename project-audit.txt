@@ -1,0 +1,677 @@
+===== PROJECT AUDIT =====
+Thu Oct 15 09:41:14 IST 2026
+===== GIT STATUS =====
+## main...origin/main
+?? project-audit.txt
+===== PROJECT TREE =====
+./IMPLEMENTATION_REPORT.md
+./middleware.ts
+./.DS_Store
+./.env.local
+./app/signup/page.tsx
+./app/admin/plans/page.tsx
+./app/admin/payment-gateways/page.tsx
+./app/admin/subscriptions/page.tsx
+./app/admin/logs/page.tsx
+./app/admin/ml/page.tsx
+./app/admin/support-team/page.tsx
+./app/admin/layout.tsx
+./app/admin/users/page.tsx
+./app/admin/chats/page.tsx
+./app/admin/account/page.tsx
+./app/admin/page.tsx
+./app/admin/pricing/page.tsx
+./app/admin/analytics/error.tsx
+./app/admin/analytics/loading.tsx
+./app/admin/analytics/page.tsx
+./app/start/page.tsx
+./app/checkout/success/page.tsx
+./app/checkout/page.tsx
+./app/dashboard/settings/page.tsx
+./app/dashboard/checker/page.tsx
+./app/dashboard/layout.tsx
+./app/dashboard/page.tsx
+./app/dashboard/billing/page.tsx
+./app/dashboard/reports/page.tsx
+./app/verify-email/page.tsx
+./app/team/page.tsx
+./app/layout.tsx
+./app/error.tsx
+./app/api/analysis/route.ts
+./app/api/chat/route.ts
+./app/page.tsx
+./app/pricing/page.tsx
+./app/globals.css
+./app/login/page.tsx
+./app/not-found.tsx
+./.tmp-dbcopy/sched.tgz
+./.tmp-dbcopy/fixes2.tgz
+./.tmp-dbcopy/fixes.tgz
+./.tmp-dbcopy/probe
+./postcss.config.mjs
+./next.config.mjs
+./tsconfig.tsbuildinfo
+./project-audit.txt
+./next-env.d.ts
+./Image/Google-Adsense-Logo.png
+./Image/AdSense Checker Dashboard.png
+./README.md
+./instrumentation-node.ts
+./components/ui/GlassCard.tsx
+./components/ui/Container.tsx
+./components/ui/Field.tsx
+./components/ui/Eyebrow.tsx
+./components/ui/SectionHeader.tsx
+./components/ui/ProgressStages.tsx
+./components/ui/Status.tsx
+./components/ui/UrlForm.tsx
+./components/ui/Badge.tsx
+./components/ui/CountUp.tsx
+./components/ui/Button.tsx
+./components/ui/Toast.tsx
+./components/ui/EmptyState.tsx
+./components/ui/Spinner.tsx
+./components/ui/Skeleton.tsx
+./components/ui/Reveal.tsx
+./components/ui/ScoreArc.tsx
+./components/home/PlatformMarquee.tsx
+./components/home/HomeSections.tsx
+./components/home/content.ts
+./components/home/OpenFromHash.tsx
+./components/sections/Hero.tsx
+./components/sections/Navbar.tsx
+./components/sections/Team.tsx
+./components/sections/SiteHeader.tsx
+./components/sections/Features.tsx
+./components/sections/TrustBar.tsx
+./components/sections/FinalCta.tsx
+./components/sections/ApprovalGallery.tsx
+./components/sections/Footer.tsx
+./components/sections/Stats.tsx
+./components/sections/ReportPreview.tsx
+./components/sections/AccountMenu.tsx
+./components/sections/Process.tsx
+./components/chat/ChatWidget.tsx
+./components/auth/VerifyEmailForm.tsx
+./components/auth/LoginForm.tsx
+./components/auth/AuthShell.tsx
+./components/auth/SignupForm.tsx
+./components/illustrations/Logomark.tsx
+./components/illustrations/GridPlane.tsx
+./components/illustrations/Aurora.tsx
+./components/illustrations/PlatformGlyphs.tsx
+./components/illustrations/AuditCard.tsx
+./components/illustrations/StepGlyphs.tsx
+./components/admin/AdminShell.tsx
+./components/admin/CurrencySetting.tsx
+./components/admin/SupportTeam.tsx
+./components/admin/ChatInbox.tsx
+./components/admin/Panels.tsx
+./components/admin/YearlyBillingSwitch.tsx
+./components/admin/MlControls.tsx
+./components/admin/UserActions.tsx
+./components/admin/PricingTable.tsx
+./components/admin/PlanEditor.tsx
+./components/admin/GatewayForm.tsx
+./components/admin/analytics/SettingsForm.tsx
+./components/admin/analytics/BusinessTabs.tsx
+./components/admin/analytics/RangeControls.tsx
+./components/admin/analytics/Charts.tsx
+./components/admin/analytics/TrafficTabs.tsx
+./components/admin/analytics/format.ts
+./components/admin/analytics/Parts.tsx
+./components/admin/analytics/TabErrorBoundary.tsx
+./components/admin/analytics/Skeleton.tsx
+./components/admin/AlertSettings.tsx
+./components/checkout/CheckoutForm.tsx
+./components/dashboard/PageHeading.tsx
+./components/dashboard/AdsenseFeedbackPrompt.tsx
+./components/dashboard/BillingPlanCards.tsx
+./components/dashboard/DashboardShell.tsx
+./components/dashboard/ReportRow.tsx
+./components/dashboard/QuickCheck.tsx
+./components/dashboard/BillingHistoryTable.tsx
+./components/dashboard/CheckerPanel.tsx
+./components/dashboard/RenewalCycleControl.tsx
+./components/ScanContext.tsx
+./components/report/RunningPanel.tsx
+./components/report/WeeklyRescanToggle.tsx
+./components/report/Areas.tsx
+./components/report/IssueList.tsx
+./components/report/ScorePanel.tsx
+./components/report/ReportActions.tsx
+./components/report/ReportSections.tsx
+./components/account/ProfileForm.tsx
+./components/account/SessionsPanel.tsx
+./components/account/PasswordForm.tsx
+./components/account/Avatar.tsx
+./components/pricing/PlanCard.tsx
+./components/pricing/PlanGrid.tsx
+./components/pricing/PricingPlans.tsx
+./components/pricing/CycleSwitcher.tsx
+./components/pricing/CheckoutButton.tsx
+./components/billing/PrintButton.tsx
+./components/analytics/track.ts
+./components/analytics/Tracker.tsx
+./public/cashfree.png
+./public/video/approval/adsense8.jpeg
+./public/video/approval/adsense2.png
+./public/video/approval/adsense7.jpg
+./public/video/approval/adsense6.jpg
+./public/video/approval/adsense5.png
+./public/video/approval/adsense9.png
+./public/video/approval/adsense1.jpeg
+./public/video/approval/adsense4.webp
+./public/video/approval/adsense3.webp
+./public/video/approval/Home-page-hero.png
+./public/video/approval/adsense10.PNG
+./public/scan-website.png
+./public/razorpay.png
+./public/images/website-analysis-report.png
+./public/logos/squarespace.webp
+./public/logos/blogger.png
+./public/logos/AdSense Checker Laptop Dashboard.png
+./public/logos/wix.webp
+./public/logos/Shopify_logo.webp
+./public/logos/wordpress.svg
+./public/team/member-3.png
+./public/team/member-2.png
+./public/team/member-1.png
+./public/logo.png
+./public/paypal.png
+./.gitignore
+./package-lock.json
+./package.json
+./scripts/auth-flow-test.mjs
+./scripts/analytics-test.mjs
+./scripts/phase7-test.mjs
+./scripts/report-test.mjs
+./scripts/insights-test.mjs
+./scripts/billing-cycle-test.mjs
+./scripts/analyzer-framework-test.mjs
+./scripts/homepage-test.mjs
+./scripts/smtp-test.mjs
+./scripts/insights-http-test.mjs
+./scripts/run-scheduled-jobs.mjs
+./scripts/scheduler-test.mjs
+./scripts/verify.mjs
+./scripts/analyzers-unit-test.mjs
+./scripts/alerts-test.mjs
+./scripts/test-all.mjs
+./scripts/pricing-test.mjs
+./scripts/checkout-test.mjs
+./scripts/limits-test.mjs
+./scripts/profile-test.mjs
+./scripts/lib/chromium.mjs
+./scripts/lib/smtp-sink.mjs
+./scripts/lib/server-env.mjs
+./scripts/lib/mail-sink.mjs
+./scripts/lib/compile-lib.mjs
+./scripts/lib/fixture-dns.mjs
+./scripts/whois-test.mjs
+./scripts/ml-test.mjs
+./scripts/fixtures/remote-smtp-hook.mjs
+./scripts/fixtures/sites.mjs
+./scripts/fixtures/dns-hook.mjs
+./scripts/analysis-test.mjs
+./scripts/ml-http-test.mjs
+./scripts/chat-test.mjs
+./scripts/otp-test.mjs
+./lib/plan-catalogue.ts
+./lib/client-session.ts
+./lib/payments/types.ts
+./lib/payments/registry.ts
+./lib/payments/cashfree.ts
+./lib/payments/index.ts
+./lib/payments/config.ts
+./lib/payments/razorpay.ts
+./lib/payments/labels.ts
+./lib/payments/paypal.ts
+./lib/billing-details-server.ts
+./lib/analysis/crawler.ts
+./lib/analysis/insights/history.ts
+./lib/analysis/insights/scheduled_rescan.ts
+./lib/analysis/insights/contract.ts
+./lib/analysis/insights/similar_sites_comparison.ts
+./lib/analysis/insights/approval_probability.ts
+./lib/analysis/insights/readiness_timeline.ts
+./lib/analysis/insights/rejection_reason_predictor.ts
+./lib/analysis/insights/keys.ts
+./lib/analysis/insights/rescan_diff.ts
+./lib/analysis/insights/index.ts
+./lib/analysis/insights/runner.ts
+./lib/analysis/robots.ts
+./lib/analysis/fetcher.ts
+./lib/analysis/analyzers/contract.ts
+./lib/analysis/analyzers/util.ts
+./lib/analysis/analyzers/index.ts
+./lib/analysis/analyzers/runner.ts
+./lib/analysis/analyzers/catalog.ts
+./lib/analysis/demo.ts
+./lib/analysis/whois.ts
+./lib/analysis/target.ts
+./lib/analysis/language.ts
+./lib/analysis/engine.ts
+./lib/analysis/types.ts
+./lib/analysis/net.ts
+./lib/analysis/html.ts
+./lib/analysis/checks.ts
+./lib/analysis/niche.ts
+./lib/analysis/signals.ts
+./lib/avatars.ts
+./lib/ids.ts
+./lib/chat/bus.ts
+./lib/chat/team-input.ts
+./lib/chat/sse.ts
+./lib/chat/staff.ts
+./lib/chat/service.ts
+./lib/scheduler.ts
+./lib/auth/password.ts
+./lib/auth/guard.ts
+./lib/auth/cookie.ts
+./lib/auth/session.ts
+./lib/auth/redirect.ts
+./lib/auth/email-verification.ts
+./lib/cn.ts
+./lib/plans.ts
+./lib/scans/jobs.ts
+./lib/request-origin.ts
+./lib/checkout-client.ts
+./lib/http.ts
+./lib/audit-service.ts
+./lib/secrets.ts
+./lib/schedules/email.ts
+./lib/schedules/job.ts
+./lib/schedules/store.ts
+./lib/validate.ts
+./lib/money.ts
+./lib/alerts/settings.ts
+./lib/alerts/checkout.ts
+./lib/alerts/templates.ts
+./lib/alerts/notify.ts
+./lib/alerts/job.ts
+./lib/format.ts
+./lib/ml/train.ts
+./lib/ml/feedback-email.ts
+./lib/ml/model.ts
+./lib/ml/rules.ts
+./lib/ml/features.ts
+./lib/ml/constants.ts
+./lib/ml/predict.ts
+./lib/ml/feedback.ts
+./lib/ml/job.ts
+./lib/ml/collect.ts
+./lib/ml/labels.ts
+./lib/ml/describe.ts
+./lib/ml/store.ts
+./lib/checks.ts
+./lib/profile.ts
+./lib/db/schema.ts
+./lib/db/webhooks.ts
+./lib/db/admin.ts
+./lib/db/pending.ts
+./lib/db/types.ts
+./lib/db/feature-seeds.ts
+./lib/db/accounts.ts
+./lib/db/index.ts
+./lib/db/billing.ts
+./lib/db/audits.ts
+./lib/report/areas.ts
+./lib/billing-details.ts
+./lib/limits.ts
+./lib/currency-readiness.ts
+./lib/domain.ts
+./lib/env.ts
+./lib/rate-limit.ts
+./lib/site-currency.ts
+./lib/razorpay.ts
+./lib/email/templates.ts
+./lib/email/index.ts
+./lib/billing/fulfil.ts
+./lib/billing/yearly-settings.ts
+./lib/billing/offer.ts
+./lib/billing/cycle.ts
+./lib/entitlement.ts
+./lib/analytics/privacy.ts
+./lib/analytics/report.ts
+./lib/analytics/funnel.ts
+./lib/analytics/settings.ts
+./lib/analytics/csv.ts
+./lib/analytics/traffic.ts
+./lib/analytics/common.ts
+./lib/analytics/business.ts
+./lib/analytics/events.ts
+./lib/analytics/sections.ts
+./lib/analytics/hooks.ts
+./lib/analytics/exports.ts
+./lib/analytics/store.ts
+./lib/analytics/time.ts
+./tsconfig.json
+./tsconfig.attest.json
+./.env.example
+./data/app.db
+./data/app.db-shm
+./data/app.db-wal
+./data/.dev-auth-secret
+./data/avatars/UYfFgMbqggzHLAF1CEGlb45R.webp
+./instrumentation.ts
+./eslint.config.mjs
+===== PACKAGE.JSON =====
+{
+  "name": "adsense-eligibility-checker",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "verify": "node scripts/verify.mjs",
+    "test:auth-flow": "npm run build && node scripts/auth-flow-test.mjs",
+    "test:profile": "npm run build && node scripts/profile-test.mjs",
+    "test:checkout": "npm run build && node scripts/checkout-test.mjs",
+    "test:otp": "npm run build && node scripts/otp-test.mjs",
+    "test:pricing": "npm run build && node scripts/pricing-test.mjs",
+    "test:chat": "npm run build && node scripts/chat-test.mjs",
+    "test:alerts": "npm run build && node scripts/alerts-test.mjs",
+    "test:analytics": "npm run build && node scripts/analytics-test.mjs",
+    "test:homepage": "npm run build && node scripts/homepage-test.mjs",
+    "test:smtp": "npm run build && node scripts/smtp-test.mjs",
+    "test:analysis": "node scripts/analysis-test.mjs",
+    "test:framework": "node scripts/analyzer-framework-test.mjs",
+    "test:analyzers": "node scripts/analyzers-unit-test.mjs",
+    "test:whois": "node --test scripts/whois-test.mjs",
+    "test:ml": "node --test --test-concurrency=1 scripts/ml-test.mjs",
+    "test:ml-http": "npm run build && node scripts/ml-http-test.mjs",
+    "test:insights": "node --test --test-concurrency=1 scripts/insights-test.mjs",
+    "test:insights-http": "npm run build && node scripts/insights-http-test.mjs",
+    "test:billing-cycle": "npm run build && node scripts/billing-cycle-test.mjs",
+    "test:limits": "npm run build && node scripts/limits-test.mjs",
+    "test:report": "npm run build && node scripts/report-test.mjs",
+    "test:phase7": "node scripts/phase7-test.mjs",
+    "test:all": "node scripts/test-all.mjs",
+    "test:scheduler": "npm run build && node scripts/scheduler-test.mjs",
+    "jobs:run": "node scripts/run-scheduled-jobs.mjs"
+  },
+  "dependencies": {
+    "cheerio": "1.2.0",
+    "framer-motion": "^11.15.0",
+    "libphonenumber-js": "1.13.12",
+    "lucide-react": "^0.469.0",
+    "next": "15.5.27",
+    "nodemailer": "10.0.10",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "sharp": "^0.35.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.0.0",
+    "@types/node": "^22.10.5",
+    "@types/react": "^19.0.7",
+    "@types/react-dom": "^19.0.3",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.4.0",
+    "playwright-core": "1.63.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.7.3"
+  }
+}
+===== ENV VARIABLE NAMES ONLY =====
+--- .env.example
+# ============================================================
+# Verdict — environment configuration
+# ------------------------------------------------------------
+# Copy this file to `.env.local` and fill in the values you need:
+#
+#     cp .env.example .env.local
+#
+# `.env.local` is gitignored. This template is committed, so never
+# put a real key in it.
+#
+# The app runs with NONE of these set: sessions use a development
+# secret written to data/.dev-auth-secret, and the database is
+# created at data/app.db on first request. Only payments and the
+# admin panel need configuration before they do anything.
+#
+# Payment credentials here are a SEED AND A FALLBACK. The live
+# source of truth is the `payment_gateways` table, edited at
+# /admin/payment-gateways, where secrets are encrypted at rest.
+# ============================================================
+
+
+# ── required in production ──────────────────────────────────
+# Signs session cookies. Must be at least 32 characters.
+# Rotating it logs everyone out. Generate one with:
+#   openssl rand -base64 48
+# In development this may be omitted; a random secret is
+# generated and stored in data/.dev-auth-secret. In production a
+# missing or short value is a hard startup error.
+AUTH_SECRET=<REDACTED>
+
+# Encrypts payment gateway secrets stored in the database
+# (AES-256-GCM). At least 32 characters. If it is absent, a key is
+# derived from AUTH_SECRET under a separate HKDF label, so a fresh
+# deployment works without it — but then rotating AUTH_SECRET also
+# invalidates every stored gateway secret. Set both in production.
+#   openssl rand -base64 48
+CREDENTIALS_SECRET=<REDACTED>
+
+# Public origin of the app, no trailing slash. Used to build
+# gateway callback URLs, the host shown on invoices and every link
+# inside emails. In production set it to your real https:// URL
+# (e.g. https://yourdomain.com). APP_URL is accepted as another name.
+# Defaults to http://localhost:3000.
+NEXT_PUBLIC_APP_URL=<REDACTED>
+
+
+# ── first admin ─────────────────────────────────────────────
+# Bootstraps the admin panel on database open. BOTH must be set
+# for anything to happen. The password is hashed with the same
+# scrypt parameters as any other account and is never stored in
+# plain text.
+#
+# If the account already exists, only its role is raised — a
+# redeploy will not reset a password the admin has changed. Sign
+# in at /login as normal; the panel is at /admin.
+#
+# Remove these from the environment once the account exists.
+ADMIN_EMAIL=<REDACTED>
+ADMIN_PASSWORD=<REDACTED>
+ADMIN_NAME=<REDACTED>
+
+
+# ── email: sign-up verification codes ───────────────────────
+# New accounts confirm their address with a 6-digit code sent by
+# email before the account exists. Without a working provider,
+# production REFUSES new sign-ups (existing accounts can still log
+# in) rather than pretending a code was sent. Payment alerts use
+# the same provider.
+#
+# Google SMTP (recommended). Setting SMTP_USER selects it; you can
+# also say EMAIL_PROVIDER=smtp. Setup steps: README → "Email
+# (Google SMTP)".
+#   SMTP_HOST          smtp.gmail.com (the default)
+#   SMTP_PORT          587 with SMTP_SECURE=false (STARTTLS, required)
+#                      or 465 with SMTP_SECURE=true (TLS from the start)
+#   SMTP_USER          the full Gmail / Google Workspace address
+#   SMTP_APP_PASSWORD  a Google App Password for that account — NEVER
+#                      its normal password. Spaces are ignored.
+#   EMAIL_FROM         defaults to SMTP_USER. Must be that address or a
+#                      "Send mail as" alias verified in Gmail, e.g.
+#                      AdSense Checker <you@gmail.com>
+# These are server-side only: never prefix them with NEXT_PUBLIC_
+# and never commit real values.
+EMAIL_PROVIDER=<REDACTED>
+SMTP_HOST=<REDACTED>
+SMTP_PORT=<REDACTED>
+SMTP_SECURE=<REDACTED>
+SMTP_USER=<REDACTED>
+SMTP_APP_PASSWORD=<REDACTED>
+EMAIL_FROM=<REDACTED>
+# Optional: where replies go.
+EMAIL_REPLY_TO=<REDACTED>
+#
+# Resend (https://resend.com) still works instead: EMAIL_PROVIDER=resend,
+# RESEND_API_KEY, and an EMAIL_FROM on your verified domain.
+RESEND_API_KEY=<REDACTED>
+# Test-only: send to a different Resend-compatible URL. The test
+# suite points this at a local stand-in. Leave unset in production.
+RESEND_API_URL=<REDACTED>
+#
+# EMAIL_PROVIDER=console is for local development only: it prints
+# each email (including the code) to the server terminal instead
+# of sending it, and is refused when NODE_ENV=production. It is
+# the default in development when nothing here is set.
+
+
+# ── payment & checkout alerts ───────────────────────────────
+# Alerts are emailed through the provider above to the address set in
+# Admin → Notifications (not configured here).
+#
+# ── scheduled jobs (README → Scheduled jobs) ────────────────
+# CRON_SECRET protects the three scheduled-job endpoints, which a
+# scheduler (e.g. a Render Cron Job running
+# `node scripts/run-scheduled-jobs.mjs`) should call every 5–10 minutes:
+#   POST /api/internal/jobs/checkout-alerts  abandoned checkouts, alert retries
+#   POST /api/internal/jobs/ml               prediction feedback emails, training
+#   POST /api/internal/jobs/rescans          Pro weekly rescans
+# At least 32 random characters, e.g.
+#   openssl rand -hex 32
+# Without it every one of those endpoints refuses every request. Set the
+# same value on the scheduler, together with APP_URL (the site address).
+CRON_SECRET=<REDACTED>
+# The server also runs each job every 5 minutes on its own while it is
+# awake, as a safety net. Set to "off" to disable that, per job.
+CHECKOUT_ALERTS_BACKGROUND=<REDACTED>
+ML_BACKGROUND=<REDACTED>
+RESCANS_BACKGROUND=<REDACTED>
+# Hour (UTC) of the nightly model training. Default 21 (02:30 IST).
+ML_TRAIN_HOUR_UTC=<REDACTED>
+
+
+# ── payments: Razorpay (INR) ────────────────────────────────
+# Razorpay Dashboard → Settings → API Keys. rzp_test_* keys hit
+# the real API in test mode, which is what you want for
+# end-to-end testing.
+#
+# KEY_ID reaches the browser to open Razorpay Checkout; that is by
+# design and is safe. KEY_SECRET and WEBHOOK_SECRET are read
+# server-side only and must never be prefixed with NEXT_PUBLIC_.
+RAZORPAY_KEY_ID=<REDACTED>
+RAZORPAY_KEY_SECRET=<REDACTED>
+
+# Razorpay Dashboard → Settings → Webhooks. Point the endpoint at
+# {NEXT_PUBLIC_APP_URL}/api/webhooks/razorpay and subscribe to
+# payment.captured, order.paid and payment.failed. Without this
+# secret the route rejects every delivery: an unverified webhook is
+# worse than no webhook.
+RAZORPAY_WEBHOOK_SECRET=<REDACTED>
+
+
+# ── payments: Cashfree (INR) ────────────────────────────────
+# Cashfree Dashboard → Developers → API Keys. Webhook endpoint:
+# {NEXT_PUBLIC_APP_URL}/api/webhooks/cashfree — subscribe to
+# PAYMENT_SUCCESS_WEBHOOK, PAYMENT_FAILED_WEBHOOK and
+# PAYMENT_USER_DROPPED_WEBHOOK. Signatures are verified as base64
+# HMAC-SHA256 over timestamp + raw body.
+CASHFREE_APP_ID=<REDACTED>
+CASHFREE_SECRET_KEY=<REDACTED>
+CASHFREE_WEBHOOK_SECRET=<REDACTED>
+
+# sandbox (default) or live. Selects the API host.
+CASHFREE_ENVIRONMENT=<REDACTED>
+
+
+# ── payments: PayPal (USD) ──────────────────────────────────
+# PayPal Developer → Apps & Credentials. Webhook endpoint:
+# {NEXT_PUBLIC_APP_URL}/api/webhooks/paypal — subscribe to
+# PAYMENT.CAPTURE.COMPLETED, PAYMENT.CAPTURE.DENIED,
+# PAYMENT.CAPTURE.REVERSED and CHECKOUT.ORDER.VOIDED. The webhook
+# id is required: deliveries are verified by calling PayPal's
+# verify-webhook-signature API.
+PAYPAL_CLIENT_ID=<REDACTED>
+PAYPAL_CLIENT_SECRET=<REDACTED>
+PAYPAL_WEBHOOK_ID=<REDACTED>
+
+# sandbox (default) or live. Selects the API host.
+PAYPAL_ENVIRONMENT=<REDACTED>
+
+# Note: PayPal will not settle INR for most merchant accounts, so
+# it also needs a settlement currency (e.g. USD) and the ₹-per-unit
+# rate you maintain. Those two fields exist only in the admin panel
+# at /admin/payment-gateways — the app will not invent an exchange
+# rate, and PayPal stays unconfigurable until they are set.
+
+
+# ── payments: local simulator ───────────────────────────────
+# Simulates the full checkout → verify → subscription flow with no
+# gateway account at all. Refused entirely when
+# NODE_ENV=production. Every row it writes is stamped mode='mock'
+# and is labelled "Test payment" on the billing page and the
+# invoice, so a simulated purchase can never be mistaken for a
+# real one.
+#   PAYMENTS_MODE=mock
+PAYMENTS_MODE=<REDACTED>
+
+
+# ── storage ─────────────────────────────────────────────────
+# Where the SQLite file and the dev session secret live.
+# Defaults to ./data. Point this at a persistent volume when
+# deploying; a container filesystem will lose every account and
+# report on redeploy.
+DATA_DIR=<REDACTED>
+
+# Optional. Where profile photos are stored; defaults to <DATA_DIR>/avatars.
+# On Render, DATA_DIR must be on a persistent disk (it holds the database),
+# and photos are kept there too — so they survive restarts and redeploys.
+AVATAR_DIR=<REDACTED>
+
+
+# ── analysis engine (optional tuning) ───────────────────────
+# Pages fetched per audit when no plan page limit applies (older
+# code paths). Scans use the plan's "pages per scan" (Admin -> Plans).
+# Default 6.
+ANALYSIS_MAX_PAGES=<REDACTED>
+
+# Longest a scan may run, in milliseconds, however many pages its plan
+# allows. Default 240000 (4 minutes).
+ANALYSIS_MAX_DEADLINE_MS=<REDACTED>
+
+# Scans running at once in this server process; more wait their turn.
+# Default 3 (1-20).
+ANALYSIS_CONCURRENT_JOBS=<REDACTED>
+
+# Per-request timeout in milliseconds. Default 12000.
+ANALYSIS_TIMEOUT_MS=<REDACTED>
+
+# Sent as the User-Agent when fetching a site being audited.
+ANALYSIS_USER_AGENT=<REDACTED>
+
+# Allows auditing private address space — localhost, 10.x,
+# 192.168.x, link-local, cloud metadata, and so on. Off by
+# default: refusing private addresses is what stops the analyser
+# being used as an SSRF proxy into your network. Ignored in
+# production.
+#   ALLOW_PRIVATE_ANALYSIS_HOSTS=true
+ALLOW_PRIVATE_ANALYSIS_HOSTS=<REDACTED>
+
+# For machines with no outbound network. When a site genuinely
+# cannot be reached, records a clearly-labelled demo report
+# instead of failing, so the checker → report → history flow
+# stays testable offline. Such reports are permanently marked
+# "Demo data" everywhere they appear. A deliberately refused
+# address is still refused — this never turns "we will not scan
+# your router" into a cheerful sample. Ignored in production.
+#   ANALYSIS_DEMO_FALLBACK=true
+ANALYSIS_DEMO_FALLBACK=<REDACTED>
+
+# Website analytics: only if a trusted proxy in front of the site sets a
+# visitor-country header (e.g. Cloudflare's CF-IPCountry). Leave empty on
+# plain Render — countries are then shown as "not measured".
+#   ANALYTICS_COUNTRY_HEADER=cf-ipcountry
+ANALYTICS_COUNTRY_HEADER=<REDACTED>
+===== DATABASE / SCHEDULER / DEPLOYMENT REFERENCES =====

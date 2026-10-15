@@ -1,0 +1,16 @@
+# Caddy gets and renews the HTTPS certificate for the domain automatically
+# (Let's Encrypt), as soon as the domain's DNS points to this VM and ports
+# 80 and 443 are open.
+
+__DOMAIN__ {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:__PORT__
+}
+
+# Optional: www.your-domain → your-domain. Add a DNS record for www first,
+# then remove the # signs below and run: sudo systemctl reload caddy
+# (Left off by default: without the DNS record Caddy would keep failing to
+# get a certificate for www.)
+#www.__DOMAIN__ {
+#	redir https://__DOMAIN__{uri} permanent
+#}

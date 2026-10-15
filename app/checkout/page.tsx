@@ -154,7 +154,12 @@ export default async function CheckoutPage({
   const accessLabel = cycle === "yearly" ? "12 months of access" : "1 month of access";
 
   const summary = (
-    <section aria-labelledby="summary-heading" className="rounded-xl border border-ink-700 bg-white p-5 sm:p-6">
+    <section
+      key="order-summary"
+      aria-labelledby="summary-heading"
+      className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"
+    >
+
       <h2 id="summary-heading" className="text-[1.0625rem] font-semibold text-cloud-50">
         Order summary
       </h2>
@@ -213,20 +218,12 @@ export default async function CheckoutPage({
           <dd className="text-cloud-300">Included in price</dd>
         </div>
         <div className="flex justify-between gap-4 border-t border-ink-700 pt-3">
-          <dt className="font-semibold text-cloud-50">Total due today</dt>
+          <dt className="font-semibold text-cloud-50">Total: </dt>
           <dd className="text-[1.25rem] font-semibold tabular-nums text-cloud-50">{price}</dd>
         </div>
       </dl>
 
-      <div className="mt-4 rounded-xl bg-ink-900 px-4 py-3 text-[0.8125rem] leading-relaxed text-cloud-300">
-        <p className="font-medium text-cloud-50">How billing works</p>
-        <p className="mt-1">
-          This is a one-time payment of {price} for {accessLabel.replace(" of access", "")} of {plan.name}, charged
-          in {currency}. You won&apos;t be charged again automatically. When the period ends the plan expires, and you can buy it again
-          from Billing whenever you need it.
-          {cycle === "yearly" ? " Your scan allowance still resets every month." : ""}
-        </p>
-      </div>
+      
 
     </section>
   );

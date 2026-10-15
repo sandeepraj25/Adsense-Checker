@@ -92,8 +92,8 @@ export default async function PricingPage({
 
       <main>
         {/* ── Header ───────────────────────────────────────────── */}
-        <section className="relative overflow-hidden pt-28 pb-10 sm:pt-32">
-          <div
+        <section className="relative overflow-hidden bg-slate-50 pb-12 pt-28 sm:pt-32">
+                    <div
             aria-hidden
             className="app-glow pointer-events-none absolute inset-0 -top-32"
           />
@@ -127,7 +127,7 @@ export default async function PricingPage({
         </section>
 
         {/* ── Plans ────────────────────────────────────────────── */}
-        <section className="pb-20">
+        <section className="bg-slate-50 pb-20">
           <Container size="default">
             {user && selectedPlanId ? (
               <p className="mb-5 text-center text-[0.9375rem] text-cloud-400">

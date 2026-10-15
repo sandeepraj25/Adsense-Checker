@@ -1,3 +1,4 @@
+
 import { Check, Crown, Minus, Sparkles, Zap } from "lucide-react";
 
 import { Badge } from "@/components/ui/Badge";
@@ -20,9 +21,7 @@ export function PlanCard({
 }: {
   plan: Plan;
   currency?: Currency;
-  /** The toggle's position. */
   cycle?: BillingCycle;
-  /** This plan's yearly offer, when the toggle is on yearly and one exists. */
   yearly?: YearlyOffer | null;
   current?: boolean;
   inherits?: string;
@@ -38,69 +37,47 @@ export function PlanCard({
   return (
     <article
       className={cn(
-        "relative flex min-w-0 flex-col overflow-hidden rounded-xl border p-4 transition duration-200 hover:-translate-y-0.5 sm:p-5",
-        // One set or the other: cn() does not resolve conflicting classes,
-        // so listing both let bg-white win and left the featured card's
-        // white text on a white card.
+        "relative flex h-full min-w-0 flex-col overflow-hidden rounded-2xl border p-6 transition-all duration-300 hover:-translate-y-1 sm:p-7",
         featured
-          ? "border-slate-800 bg-[#11151b] text-white shadow-xl hover:shadow-2xl"
-          : "border-ink-700/80 bg-white text-slate-900 shadow-sm hover:shadow-lg",
-        current &&
-          !featured &&
-          "border-azure-500 ring-1 ring-azure-500/20",
+          ? "border-violet-600 bg-violet-600 text-white shadow-xl shadow-violet-600/20 hover:shadow-2xl hover:shadow-violet-600/25"
+          : "border-slate-200 bg-white text-slate-900 shadow-sm hover:border-slate-300 hover:shadow-xl",
+        current && !featured && "border-violet-500 ring-2 ring-violet-500/15",
         className,
       )}
     >
-      {/* Decorative corners */}
-      <span
-        aria-hidden="true"
-        className={cn(
-          "pointer-events-none absolute left-2 top-2 size-1.5 rounded-full border border-slate-300",
-          featured && "border-slate-600",
-        )}
-      />
-      <span
-        aria-hidden="true"
-        className={cn(
-          "pointer-events-none absolute right-2 top-2 size-1.5 rounded-full border border-slate-300",
-          featured && "border-slate-600",
-        )}
-      />
-      <span
-        aria-hidden="true"
-        className={cn(
-          "pointer-events-none absolute bottom-2 left-2 size-1.5 rounded-full border border-slate-300",
-          featured && "border-slate-600",
-        )}
-      />
-      <span
-        aria-hidden="true"
-        className={cn(
-          "pointer-events-none absolute bottom-2 right-2 size-1.5 rounded-full border border-slate-300",
-          featured && "border-slate-600",
-        )}
-      />
-
       {/* Plan heading */}
-      <div className="flex items-start justify-between gap-3 px-1 pt-1">
-        <div className="flex min-w-0 items-center gap-2">
+      <div className="flex min-h-8 items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2.5">
           {planName === "free" ? (
-            <Zap className="size-4 shrink-0 text-amber-500" />
+            <Zap
+              aria-hidden="true"
+              className={cn(
+                "size-5 shrink-0",
+                featured ? "text-violet-100" : "text-amber-500",
+              )}
+            />
           ) : planName === "basic" ? (
-            <Sparkles className="size-4 shrink-0 text-blue-500" />
+            <Sparkles
+              aria-hidden="true"
+              className={cn(
+                "size-5 shrink-0",
+                featured ? "text-violet-100" : "text-blue-500",
+              )}
+            />
           ) : (
             <Crown
+              aria-hidden="true"
               className={cn(
-                "size-4 shrink-0",
-                featured ? "text-amber-400" : "text-amber-500",
+                "size-5 shrink-0",
+                featured ? "text-white" : "text-violet-600",
               )}
             />
           )}
 
           <h3
             className={cn(
-              "truncate text-base font-bold tracking-tight text-slate-900",
-              featured && "text-white",
+              "truncate text-xl font-semibold tracking-tight",
+              featured ? "text-white" : "text-slate-950",
             )}
           >
             {plan.name}
@@ -112,47 +89,45 @@ export function PlanCard({
             Current
           </Badge>
         ) : featured ? (
-          <span className="shrink-0 rounded-full bg-orange-500 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-white">
-            Pro
+          <span className="shrink-0 rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-violet-700">
+            Most Popular
           </span>
-        ) : (
-          <span
-            className={cn(
-              "shrink-0 rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600",
-              featured && "border-slate-700 bg-slate-800 text-slate-200",
-            )}
-          >
-            {free ? "Free" : "Plan"}
-          </span>
-        )}
+        ) : null}
       </div>
 
+      {/* Plan description */}
+      {plan.tagline ? (
+        <p
+          className={cn(
+            "mt-3 min-h-10 text-sm leading-6",
+            featured ? "text-violet-100" : "text-slate-500",
+          )}
+        >
+          {plan.tagline}
+        </p>
+      ) : null}
+
       {/* Price */}
-      <div className="mt-5 px-1">
-        <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-1">
+      <div className="mt-6">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
           {price === null ? (
             <span
               className={cn(
-                "text-base font-semibold text-slate-500",
-                featured && "text-slate-300",
+                "text-lg font-semibold",
+                featured ? "text-violet-100" : "text-slate-500",
               )}
             >
               Not available
             </span>
           ) : yearly && !free ? (
             <>
-              <span
-                className={cn(
-                  "text-3xl font-bold leading-none tracking-tight text-slate-950 sm:text-[2rem]",
-                  featured && "text-white",
-                )}
-              >
+              <span className="text-4xl font-semibold leading-none tracking-tight sm:text-[2.75rem]">
                 {formatMoney(yearly.price, currency)}
               </span>
               <span
                 className={cn(
-                  "text-xs text-slate-500",
-                  featured && "text-slate-400",
+                  "text-sm",
+                  featured ? "text-violet-100" : "text-slate-500",
                 )}
               >
                 /year
@@ -160,18 +135,13 @@ export function PlanCard({
             </>
           ) : (
             <>
-              <span
-                className={cn(
-                  "text-3xl font-bold leading-none tracking-tight text-slate-950 sm:text-[2rem]",
-                  featured && "text-white",
-                )}
-              >
+              <span className="text-4xl font-semibold leading-none tracking-tight sm:text-[2.75rem]">
                 {formatMoney(free ? 0 : price, currency)}
               </span>
               <span
                 className={cn(
-                  "text-xs text-slate-500",
-                  featured && "text-slate-400",
+                  "text-sm",
+                  featured ? "text-violet-100" : "text-slate-500",
                 )}
               >
                 /month
@@ -183,20 +153,39 @@ export function PlanCard({
         {cycle === "yearly" && !free && price !== null ? (
           <p
             className={cn(
-              "mt-2 flex flex-wrap items-center gap-1.5 text-xs leading-5 text-slate-500",
-              featured && "text-slate-400",
+              "mt-3 flex flex-wrap items-center gap-2 text-xs leading-5",
+              featured ? "text-violet-100" : "text-slate-500",
             )}
           >
             {yearly ? (
               <>
-                <span>≈ {formatMoney(yearly.perMonth, currency)}/month, billed yearly</span>
+                <span>
+                  ≈ {formatMoney(yearly.perMonth, currency)}/month, billed
+                  yearly
+                </span>
+
                 {yearly.discount ? (
-                  <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                  <span
+                    className={cn(
+                      "rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                      featured
+                        ? "bg-white/15 text-white"
+                        : "bg-emerald-50 text-emerald-700",
+                    )}
+                  >
                     Save {yearly.discount}%
                   </span>
                 ) : null}
+
                 {yearly.badge ? (
-                  <span className="rounded-full bg-orange-50 px-2 py-0.5 text-[10px] font-semibold text-orange-700">
+                  <span
+                    className={cn(
+                      "rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                      featured
+                        ? "bg-white/15 text-white"
+                        : "bg-violet-50 text-violet-700",
+                    )}
+                  >
                     {yearly.badge}
                   </span>
                 ) : null}
@@ -207,50 +196,52 @@ export function PlanCard({
           </p>
         ) : null}
 
+        {/* Existing plan limits */}
         <p
           className={cn(
-            "mt-3 text-xs leading-5 text-slate-500",
-            featured && "text-slate-400",
+            "mt-4 text-xs leading-5",
+            featured ? "text-violet-100" : "text-slate-500",
           )}
         >
           {plan.scanLimit} scans/month · {plan.pagesPerScan}{" "}
           {plan.pagesPerScan === 1 ? "page" : "pages"}/scan · {plan.siteLimit}{" "}
-          {plan.siteLimit === 1 ? "website" : "websites"} ·{" "}
-          {checks} checks
+          {plan.siteLimit === 1 ? "website" : "websites"} · {checks} checks
         </p>
       </div>
 
-      {/* CTA */}
+      {/* Existing CTA / checkout action */}
       <div
         className={cn(
-          "mt-5 [&_a]:flex [&_a]:min-h-10 [&_a]:w-full [&_a]:items-center [&_a]:justify-center [&_a]:rounded-md [&_a]:text-sm [&_a]:font-semibold [&_button]:min-h-10 [&_button]:w-full [&_button]:rounded-md [&_button]:text-sm [&_button]:font-semibold",
-          featured &&
-            "[&_a]:border [&_a]:border-white [&_a]:bg-white [&_a]:text-slate-950 [&_a:hover]:bg-slate-100 [&_button]:border [&_button]:border-white [&_button]:bg-white [&_button]:text-slate-950",
+          "mt-6 [&_a]:flex [&_a]:min-h-11 [&_a]:w-full [&_a]:items-center [&_a]:justify-center [&_a]:rounded-lg [&_a]:px-4 [&_a]:text-sm [&_a]:font-semibold [&_a]:transition-colors [&_button]:min-h-11 [&_button]:w-full [&_button]:rounded-lg [&_button]:px-4 [&_button]:text-sm [&_button]:font-semibold [&_button]:transition-colors",
+          featured
+            ? "[&_a]:border [&_a]:border-white [&_a]:bg-white [&_a]:text-violet-700 [&_a:hover]:bg-violet-50 [&_button]:border [&_button]:border-white [&_button]:bg-white [&_button]:text-violet-700 [&_button:hover]:bg-violet-50"
+            : "[&_a]:border [&_a]:border-violet-100 [&_a]:bg-violet-50 [&_a]:text-violet-700 [&_a:hover]:border-violet-200 [&_a:hover]:bg-violet-100 [&_button]:border [&_button]:border-violet-100 [&_button]:bg-violet-50 [&_button]:text-violet-700 [&_button:hover]:bg-violet-100",
         )}
       >
         {cta}
       </div>
 
-      {/* Highlights */}
+      {/* Admin-configured highlights */}
       {plan.highlights.length > 0 ? (
         <ul
           className={cn(
-            "mt-5 space-y-2 border-t border-slate-200 pt-4",
-            featured && "border-slate-700",
+            "mt-6 space-y-2.5 border-t pt-5",
+            featured ? "border-white/20" : "border-slate-100",
           )}
         >
-          {plan.highlights.map((line) => (
+          {plan.highlights.map((line, index) => (
             <li
-              key={line}
+              key={`${line}-${index}`}
               className={cn(
-                "flex items-start gap-2 text-xs leading-5 text-slate-600",
-                featured && "text-slate-300",
+                "flex items-start gap-2.5 text-sm leading-5",
+                featured ? "text-violet-50" : "text-slate-600",
               )}
             >
               <Check
+                aria-hidden="true"
                 className={cn(
-                  "mt-0.5 size-3.5 shrink-0 text-slate-500",
-                  featured && "text-slate-300",
+                  "mt-0.5 size-4 shrink-0",
+                  featured ? "text-white" : "text-violet-600",
                 )}
               />
               <span>{line}</span>
@@ -259,49 +250,46 @@ export function PlanCard({
         </ul>
       ) : null}
 
-      {/* Features */}
+      {/* Admin-configured included / excluded features */}
       <div
         className={cn(
-          "mt-4 flex-1 border-t border-slate-200 pt-4",
-          featured && "border-slate-700",
+          "mt-5 flex-1 border-t pt-5",
+          featured ? "border-white/20" : "border-slate-100",
         )}
       >
         {inherits ? (
           <p
             className={cn(
-              "mb-3 text-xs font-semibold text-slate-600",
-              featured && "text-slate-300",
+              "mb-4 text-sm font-bold leading-5",
+              featured ? "text-violet-100" : "text-slate-600",
             )}
           >
             Everything in {inherits}, plus:
           </p>
         ) : null}
 
-        <ul className="space-y-2.5">
+        <ul className="space-y-3">
           {plan.showcase.map((feature) => (
-            <li
-              key={feature}
-              className="flex items-start gap-2.5"
-            >
+            <li key={feature} className="flex items-start gap-2.5">
               <span
                 className={cn(
-                  "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full",
-                  featured ? "border border-slate-500" : "border border-slate-300",
+                  "mt-0.5 flex size-[18px] shrink-0 items-center justify-center rounded-full",
+                  featured
+                    ? "bg-white/15 text-white"
+                    : "bg-violet-50 text-violet-700",
                 )}
               >
                 <Check
-                  className={cn(
-                    "size-2.5",
-                    featured ? "text-slate-200" : "text-slate-500",
-                  )}
+                  aria-hidden="true"
+                  className="size-3"
                   strokeWidth={2.5}
                 />
               </span>
 
               <span
                 className={cn(
-                  "text-xs leading-[1.6] text-slate-600 sm:text-[13px]",
-                  featured && "text-slate-300",
+                  "text-sm leading-[1.65]",
+                  featured ? "text-white" : "text-slate-600",
                 )}
               >
                 {FEATURE_META[feature].label}
@@ -310,18 +298,22 @@ export function PlanCard({
           ))}
 
           {plan.excluded.map((feature) => (
-            <li
-              key={feature}
-              className="flex items-start gap-2.5"
-            >
-              <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border border-slate-200">
-                <Minus className="size-2.5 text-slate-400" />
+            <li key={feature} className="flex items-start gap-2.5">
+              <span
+                className={cn(
+                  "mt-0.5 flex size-[18px] shrink-0 items-center justify-center rounded-full border",
+                  featured
+                    ? "border-white/20 text-violet-200"
+                    : "border-slate-200 text-slate-400",
+                )}
+              >
+                <Minus aria-hidden="true" className="size-3" />
               </span>
 
               <span
                 className={cn(
-                  "text-xs leading-[1.6] text-slate-400 sm:text-[13px]",
-                  featured && "text-slate-500",
+              "text-sm font-semibold leading-[1.65]",
+featured ? "text-white" : "text-slate-600",
                 )}
               >
                 {FEATURE_META[feature].label}

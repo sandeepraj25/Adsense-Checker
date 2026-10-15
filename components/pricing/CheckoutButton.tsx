@@ -74,9 +74,7 @@ export function CheckoutButton({
           <Lock className="size-3.5 opacity-70" aria-hidden />
         )}
       </ButtonLink>
-      <p className="text-center text-[0.8125rem] text-cloud-400">
-        {options.map((option) => option.label).join(" · ")}
-      </p>
+      
     </div>
   );
 }

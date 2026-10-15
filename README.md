@@ -1,10 +1,13 @@
-# AdSense Eligibility Checker
+# Verdict — AdSense Eligibility Checker
 
 A pre-review AdSense audit tool: accounts, three monthly plans, three payment
 gateways, an admin panel, a real website analyser, and stored reports, behind
 the premium dark homepage at `/`.
 
 ## Run it
+
+Deploying to your own server (e.g. an Oracle Cloud Always Free VM with your
+domain and HTTPS): see [deploy/oracle/README.md](deploy/oracle/README.md).
 
 ```bash
 npm install
