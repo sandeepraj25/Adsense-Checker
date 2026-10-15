@@ -127,8 +127,8 @@ export default async function PricingPage({
         </section>
 
         {/* ── Plans ────────────────────────────────────────────── */}
-        <section className="bg-slate-50 pb-20">
-          <Container size="default">
+        <section className="bg-slate-50 pb-32 sm:pb-40">
+                    <Container size="default">
             {user && selectedPlanId ? (
               <p className="mb-5 text-center text-[0.9375rem] text-cloud-400">
                 You&apos;re ready to continue with your selected plan below.
@@ -157,43 +157,7 @@ export default async function PricingPage({
           </Container>
         </section>
 
-        {/* ── Questions ────────────────────────────────────────── */}
-        <section className="border-t border-ink-700 py-20">
-          <Container>
-            <div>
-              <p className="text-[0.875rem] font-semibold tracking-[0.18em] text-cloud-500">
-                Before you buy
-              </p>
-
-              <h2 className="t-h2 mt-3 text-cloud-50">
-                The honest answers
-              </h2>
-            </div>
-
-            <div className="mt-10 grid gap-x-10 gap-y-8 sm:grid-cols-2">
-              {faqs.map((faq) => (
-                <Reveal key={faq.q}>
-                  <h3 className="t-h3 text-cloud-50">{faq.q}</h3>
-
-                  <p className="mt-2.5 text-[0.9375rem] leading-relaxed text-cloud-400">
-                    {faq.a}
-                  </p>
-                </Reveal>
-              ))}
-            </div>
-
-            <p className="mt-12 text-[0.9375rem] text-cloud-600">
-              Still deciding?{" "}
-              <Link
-                href={user ? "/dashboard/checker" : signupHref("free")}
-                className="text-cloud-200 underline decoration-cloud-600 underline-offset-4 transition-colors hover:text-cloud-50"
-              >
-                Run the free scan first
-              </Link>{" "}
-              — same engine, fewer checks.
-            </p>
-          </Container>
-        </section>
+      
       </main>
 
       <Footer />
