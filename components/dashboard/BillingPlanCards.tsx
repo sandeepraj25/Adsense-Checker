@@ -8,6 +8,8 @@ import { formatMoney, type Currency } from "@/lib/money";
 import type { CheckoutOption } from "@/lib/payments";
 import type { PlanRecord } from "@/lib/plan-catalogue";
 import { FEATURE_META, PLAN_RANK, planPrice } from "@/lib/plans";
+import type { BillingCycle } from "@/lib/billing/cycle";
+import { yearlyOffer } from "@/lib/billing/offer";
 
 /**
  * The plan row at the top of Billing. Every value comes from the live
@@ -21,12 +23,20 @@ export function BillingPlanCards({
   current,
   currency,
   options,
+  cycle = "monthly",
+  yearlyOn = false,
+  renewal = null,
 }: {
   plans: PlanRecord[];
   current: Subscription | null;
   currency: Currency;
   /** Enabled gateways that can take `currency`. */
   options: CheckoutOption[];
+  /** Which prices to show; plans with no yearly offer stay monthly. */
+  cycle?: BillingCycle;
+  yearlyOn?: boolean;
+  /** The plan whose period ended, offered as "Renew" rather than "Switch". */
+  renewal?: { planId: string } | null;
 }) {
   const currentRank = current ? PLAN_RANK[current.planId] : 0;
 
@@ -35,7 +45,9 @@ export function BillingPlanCards({
       {plans.map((plan) => {
         const dark = plan.featured;
         const isCurrent = current?.planId === plan.id && !current.isExpired;
-        const price = planPrice(plan, currency);
+        const offer = cycle === "yearly" ? yearlyOffer(plan, currency, yearlyOn) : null;
+        const planCycle: BillingCycle = offer ? "yearly" : "monthly";
+        const price = offer ? offer.price : planPrice(plan, currency);
         const lines = [
           `${plan.scanLimit} scans per month`,
           `${plan.siteLimit} ${plan.siteLimit === 1 ? "website" : "websites"}`,
@@ -73,10 +85,14 @@ export function BillingPlanCards({
         } else {
           action = (
             <Link
-              href={checkoutHref(plan.id)}
+              href={checkoutHref(plan.id, undefined, planCycle)}
               className={cn(buttonBase, dark ? "bg-white text-zinc-900 hover:bg-zinc-100" : "bg-zinc-900 text-white hover:bg-zinc-800")}
             >
-              {PLAN_RANK[plan.id] > currentRank ? "Upgrade Plan" : `Switch to ${plan.name}`}
+              {renewal?.planId === plan.id
+                ? `Renew ${planCycle === "yearly" ? "yearly" : "monthly"}`
+                : PLAN_RANK[plan.id] > currentRank
+                  ? "Upgrade Plan"
+                  : `Switch to ${plan.name}`}
             </Link>
           );
         }
@@ -118,10 +134,17 @@ export function BillingPlanCards({
                   <span className={cn("t-data text-[2rem] font-bold leading-none tracking-tight", dark ? "text-white" : "text-cloud-50")}>
                     {formatMoney(price, currency)}
                   </span>
-                  <span className={cn("text-[0.875rem]", dark ? "text-white/60" : "text-cloud-400")}>/month</span>
+                  <span className={cn("text-[0.875rem]", dark ? "text-white/60" : "text-cloud-400")}>{offer ? "/year" : "/month"}</span>
                 </>
               )}
             </p>
+            {cycle === "yearly" && plan.id !== "free" && price !== null ? (
+              <p className={cn("mt-1.5 text-[0.8125rem]", dark ? "text-white/70" : "text-cloud-400")}>
+                {offer
+                  ? `≈ ${formatMoney(offer.perMonth, currency)}/month${offer.discount ? ` · save ${offer.discount}%` : ""}${offer.badge ? ` · ${offer.badge}` : ""}`
+                  : "Billed monthly — no yearly option"}
+              </p>
+            ) : null}
 
             <div className="mt-5">{action}</div>
 

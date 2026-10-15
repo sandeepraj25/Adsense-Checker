@@ -15,10 +15,12 @@ import type { PlanId } from "@/lib/plans";
  * lib/checkout-client.ts. The props are kept so the pricing page did not
  * have to change shape.
  */
-export function checkoutHref(planId: PlanId, carryUrl?: string): string {
+export function checkoutHref(planId: PlanId, carryUrl?: string, cycle: "monthly" | "yearly" = "monthly"): string {
   // The checkout page charges in the site currency an administrator set,
-  // so the link carries only the plan (and the domain to scan afterwards).
+  // so the link carries only the plan, the billing cycle (which price
+  // applies — read again on the server) and the domain to scan afterwards.
   const params = new URLSearchParams({ plan: planId });
+  if (cycle === "yearly") params.set("cycle", "yearly");
   if (carryUrl) params.set("url", carryUrl);
   return `/checkout?${params.toString()}`;
 }
@@ -29,9 +31,12 @@ export function CheckoutButton({
   options,
   carryUrl,
   currency = "INR",
+  cycle = "monthly",
   variant = "primary",
   className,
 }: {
+  /** Monthly or yearly checkout. */
+  cycle?: "monthly" | "yearly";
   planId: PlanId;
   planName: string;
   label: string;
@@ -61,7 +66,7 @@ export function CheckoutButton({
 
   return (
     <div className={cn("flex flex-col gap-2", className)}>
-      <ButtonLink href={checkoutHref(planId, carryUrl)} variant={variant} size="md">
+      <ButtonLink href={checkoutHref(planId, carryUrl, cycle)} variant={variant} size="md">
         {label}
         {variant === "primary" ? (
           <ArrowRight className="size-4" aria-hidden />

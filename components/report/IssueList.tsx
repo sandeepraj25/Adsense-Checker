@@ -1,9 +1,10 @@
-import { AlertTriangle, Check, ChevronDown, Wrench } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, CircleSlash, FileText, Wrench } from "lucide-react";
 
 import { Badge, PriorityBadge } from "@/components/ui/Badge";
 import { cn } from "@/lib/cn";
 import { CATEGORY_META, type CategoryKey } from "@/lib/analysis/types";
 import type { ReportIssue, IssueStatus } from "@/lib/db/types";
+import { AREA_LABEL, CONFIDENCE_LABEL, STATUS_LABEL, areaOf } from "@/lib/report/areas";
 
 const PRIORITY_RANK = { high: 0, medium: 1, low: 2 } as const;
 
@@ -17,6 +18,7 @@ export function IssueList({ issues }: { issues: ReportIssue[] }) {
   const critical = sortIssues(issues.filter((i) => i.status === "fail"));
   const warnings = sortIssues(issues.filter((i) => i.status === "warn"));
   const passed = issues.filter((i) => i.status === "pass");
+  const errored = issues.filter((i) => i.status === "error");
 
   return (
     <div className="flex flex-col gap-10">
@@ -24,7 +26,7 @@ export function IssueList({ issues }: { issues: ReportIssue[] }) {
         <Group
           status="fail"
           title="Blockers"
-          lede="Fix these before you apply. Each one is a common, documented reason for rejection."
+          lede="Fix these before you apply. Each one is a commonly cited reason for rejection — none of them is a Google decision."
           issues={critical}
         />
       ) : null}
@@ -37,6 +39,8 @@ export function IssueList({ issues }: { issues: ReportIssue[] }) {
           issues={warnings}
         />
       ) : null}
+
+      {errored.length > 0 ? <ErroredGroup issues={errored} /> : null}
 
       {passed.length > 0 ? <PassedGroup issues={passed} /> : null}
     </div>
@@ -92,13 +96,52 @@ const accent: Record<IssueStatus, string> = {
   fail: "before:bg-rose-400",
   warn: "before:bg-amber-400",
   pass: "before:bg-mint-400",
+  error: "before:bg-zinc-400",
 };
 
-function IssueCard({ issue }: { issue: ReportIssue }) {
+/**
+ * Checks that could not run. Not a verdict on the site — an internal
+ * failure on our side — so they are listed plainly, outside the score.
+ */
+function ErroredGroup({ issues }: { issues: ReportIssue[] }) {
+  return (
+    <section>
+      <div className="flex items-center gap-3">
+        <CircleSlash className="size-5 text-cloud-400" aria-hidden />
+        <h2 className="text-[1.25rem] font-semibold tracking-tight text-cloud-50">Couldn&apos;t run</h2>
+        <span className="t-data rounded-md border border-ink-700 bg-ink-850 px-2 py-0.5 text-[0.75rem] font-medium text-cloud-300">
+          {issues.length}
+        </span>
+      </div>
+      <p className="mt-2 max-w-3xl text-[0.9375rem] leading-relaxed text-cloud-300 sm:text-[1rem]">
+        These checks hit an error on our side, so they say nothing about your site and are left out of the score.
+        Run the scan again later to include them.
+      </p>
+      <ul className="mt-5 flex flex-col gap-2">
+        {issues.map((issue) => (
+          <li key={issue.id} className="rounded-xl border border-ink-700 bg-ink-900 px-4 py-3">
+            <p className="text-[0.9375rem] font-medium text-cloud-100">{issue.label}</p>
+            <p className="mt-0.5 text-[0.875rem] text-cloud-400">{issue.detail}</p>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** How many per-page lines a card lists before summarising the rest. */
+const MAX_ITEMS = 8;
+
+export function IssueCard({ issue }: { issue: ReportIssue }) {
   const meta = CATEGORY_META[issue.categoryId as CategoryKey];
+  const area = areaOf(issue);
+  const items = issue.analyzer?.items ?? [];
+  const confidence = issue.analyzer?.confidence;
 
   return (
     <article
+      data-area={area}
+      data-status={issue.status}
       className={cn(
         "glass group relative overflow-hidden rounded-xl",
         "border border-ink-700 bg-white",
@@ -108,23 +151,52 @@ function IssueCard({ issue }: { issue: ReportIssue }) {
       )}
     >
       <div className="flex flex-wrap items-start justify-between gap-x-5 gap-y-3">
-        <h3 className="text-[1rem] font-semibold text-cloud-50 sm:text-[1.0625rem]">
+        <h3 className="min-w-0 break-words text-[1rem] font-semibold text-cloud-50 sm:text-[1.0625rem]">
           {issue.label}
         </h3>
 
-        <div className="flex shrink-0 items-center gap-2">
-          <Badge>{meta?.name ?? issue.categoryId}</Badge>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <Badge>{AREA_LABEL[area]}</Badge>
           <PriorityBadge priority={issue.priority} />
         </div>
       </div>
 
-      <p className="mt-3 text-[0.9375rem] leading-relaxed text-cloud-200 sm:text-[1rem]">
+      <p className="mt-3 break-words text-[0.9375rem] leading-relaxed text-cloud-200 sm:text-[1rem]">
         {issue.detail}
       </p>
 
-      {issue.evidence ? (
+      {confidence && confidence !== "high" ? (
+        <p className="mt-2 text-[0.8125rem] text-cloud-400">{CONFIDENCE_LABEL[confidence]}</p>
+      ) : null}
+
+      {items.length > 0 ? (
+        <ul className="mt-4 flex flex-col divide-y divide-ink-700 rounded-xl border border-ink-700 bg-ink-900">
+          {items.slice(0, MAX_ITEMS).map((item, index) => (
+            <li key={index} className="px-4 py-3">
+              <p className="break-words text-[0.875rem] leading-relaxed text-cloud-200">{item.message}</p>
+              {item.pageUrl ? (
+                <p className="mt-1 flex min-w-0 items-start gap-1.5 text-[0.8125rem] text-cloud-400">
+                  <FileText className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                  <span className="sr-only">Page: </span>
+                  <span className="break-anywhere font-mono">{item.pageUrl}</span>
+                </p>
+              ) : null}
+              {item.evidence ? (
+                <p className="mt-1 break-anywhere font-mono text-[0.8125rem] leading-relaxed text-cloud-300">
+                  {item.evidence}
+                </p>
+              ) : null}
+            </li>
+          ))}
+          {items.length > MAX_ITEMS ? (
+            <li className="px-4 py-2.5 text-[0.8125rem] text-cloud-400">
+              and {items.length - MAX_ITEMS} more like these
+            </li>
+          ) : null}
+        </ul>
+      ) : issue.evidence ? (
         <div className="mt-4 rounded-xl border border-ink-700 bg-ink-900 px-4 py-3">
-          <p className="font-mono text-[0.8125rem] leading-relaxed break-words text-cloud-300">
+          <p className="break-anywhere font-mono text-[0.8125rem] leading-relaxed text-cloud-300">
             {issue.evidence}
           </p>
         </div>
@@ -139,20 +211,23 @@ function IssueCard({ issue }: { issue: ReportIssue }) {
             />
           </div>
 
-          <div>
+          <div className="min-w-0">
             <span className="mb-1 block text-[0.8125rem] font-semibold text-cloud-50">
               How to fix
             </span>
 
-            <p className="text-[0.9375rem] leading-relaxed text-cloud-200 sm:text-[1rem]">
+            <p className="break-words text-[0.9375rem] leading-relaxed text-cloud-200 sm:text-[1rem]">
               {issue.recommendation}
             </p>
           </div>
         </div>
       ) : null}
 
-      <p className="mt-4 font-mono text-[0.75rem] text-cloud-400">
-        {issue.checkId}
+      <p className="mt-4 text-[0.75rem] text-cloud-400">
+        {STATUS_LABEL[issue.status]}
+        {meta ? <> · scored under {meta.name}</> : null}
+        {" · "}
+        <span className="font-mono">{issue.checkId}</span>
       </p>
     </article>
   );

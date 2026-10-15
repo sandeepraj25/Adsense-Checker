@@ -8,6 +8,7 @@ import { findUserRowByEmail } from "@/lib/db/accounts";
 import { expireStaleSubscriptions } from "@/lib/db/billing";
 import { jsonError, jsonOk, readJson, str } from "@/lib/http";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
+import { emailLinkOrigin } from "@/lib/env";
 import { requestOrigin } from "@/lib/request-origin";
 import { normalizeEmail } from "@/lib/validate";
 
@@ -64,7 +65,8 @@ export async function POST(request: Request) {
     // Nothing is created and no session is started here.
     const pending = pendingForLogin(email);
     if (pending && (await verifyPassword(password, pending.password_hash))) {
-      const origin = requestOrigin(request.headers, request.url);
+      // Links in the email point at the configured site, not the Host header.
+      const origin = emailLinkOrigin(requestOrigin(request.headers, request.url));
       const sent = await sendFreshCode(pending, `${origin}/login`, { rebind: true });
       if (!sent.ok && sent.code !== "RATE_LIMITED") {
         return jsonError(sent.code, sent.message);

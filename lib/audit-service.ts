@@ -2,9 +2,10 @@ import { ALLOW_DEMO_FALLBACK } from "@/lib/env";
 import type { ApiErrorCode } from "@/lib/http";
 import {
   completeReport,
+  countRunningReports,
   countWebsites,
   createRunningReport,
-  failReport,
+  failAndRefund,
   failStaleReports,
   findReport,
   pruneFailedReports,
@@ -14,10 +15,12 @@ import {
   websiteExists,
   type NewIssue,
 } from "@/lib/db/audits";
+import { tx } from "@/lib/db";
+import { MAX_RUNNING_SCANS_PER_ACCOUNT, limitReachedMessage, pagesPerScanFor } from "@/lib/limits";
+import { runScanJob } from "@/lib/scans/jobs";
 import {
   consumeScan,
   getActiveSubscription,
-  refundScan,
   settleBilling,
 } from "@/lib/db/billing";
 import type { Report, User } from "@/lib/db/types";
@@ -35,6 +38,11 @@ import type { AnalysisOutcome } from "@/lib/analysis/types";
 import type { FeatureKey } from "@/lib/plans";
 import { trackServerEvent } from "@/lib/analytics/store";
 import { newUuid } from "@/lib/ids";
+import { collectScanFeatures } from "@/lib/ml/collect";
+import { buildFeatureVector, type FeatureVector } from "@/lib/ml/features";
+import { estimateApproval, type Estimate } from "@/lib/ml/predict";
+import { ruleBasedEstimate } from "@/lib/ml/rules";
+import { INSIGHTS, runInsights } from "@/lib/analysis/insights";
 
 /**
  * One gate, one quota deduction, one report.
@@ -53,7 +61,8 @@ import { newUuid } from "@/lib/ids";
  */
 
 export type StartAuditResult =
-  | { ok: true; report: Report; demo: boolean }
+  /** `queued`: the scan is running in the background; poll the report. */
+  | { ok: true; report: Report; demo: boolean; queued?: boolean }
   | { ok: false; code: ApiErrorCode; message: string };
 
 function toIssues(outcome: AnalysisOutcome): NewIssue[] {
@@ -67,6 +76,7 @@ function toIssues(outcome: AnalysisOutcome): NewIssue[] {
     recommendation: finding.fix || null,
     evidence: finding.evidence ?? null,
     feature: finding.feature ?? null,
+    analyzer: finding.analyzer ?? null,
   }));
 }
 
@@ -85,9 +95,21 @@ const REFUSED: ReadonlySet<TargetError> = new Set<TargetError>([
 ]);
 
 
+/** The approval estimate, falling back to the published rule if the model layer itself fails. */
+function safeEstimate(vector: FeatureVector): Estimate {
+  try {
+    return estimateApproval(vector);
+  } catch (error) {
+    console.error(`[ml] estimate failed: ${error instanceof Error ? error.message : error}`);
+    return ruleBasedEstimate(vector);
+  }
+}
+
 export async function startAudit(
   user: User,
   rawUrl: string,
+  /** wait: run the scan and return its finished report (weekly rescans). */
+  options: { wait?: boolean } = {},
 ): Promise<StartAuditResult> {
   // ── 1. The account ────────────────────────────────────────────────
   const suspended = accountBlock(user);
@@ -174,37 +196,90 @@ export async function startAudit(
   // history does not accumulate duplicates of the same failed attempt.
   pruneFailedReports(user.id, website.id);
 
-  // Claim the quota atomically before doing any work, so two tabs cannot
-  // both spend the last scan of the month.
-  if (!consumeScan(subscription.id)) {
-    trackServerEvent("scan_blocked", { key: `blocked:${newUuid()}`, userId: user.id, props: { reason: "LIMIT_REACHED" } });
-    return {
-      ok: false,
-      code: "LIMIT_REACHED",
-      message:
-        "Monthly scan limit reached. Upgrade your plan or wait until your next billing cycle.",
-    };
-  }
-
-  const report = createRunningReport({
-    userId: user.id,
-    websiteId: website.id,
-    subscriptionId: subscription.id,
-    url: parsed.target.url.toString(),
-    domain,
-    planId: subscription.planId,
-    planName: subscription.planName,
-    engineVersion: ENGINE_VERSION,
-    analysisMode: "live",
-    features,
+  // ── 5. One step: no overlap, under the account's running limit, and
+  //       one scan claimed from this month's allowance ─────────────────
+  //
+  // All three are decided inside one write transaction, so two requests
+  // fired together cannot both pass: a second scan of a site already
+  // running, a third concurrent scan, or a scan past the monthly limit is
+  // refused and costs nothing.
+  const pageLimit = pagesPerScanFor(subscription);
+  const claim = tx((): { ok: true; report: Report } | { ok: false; code: ApiErrorCode; message: string } => {
+    if (countRunningReports(user.id, domain) > 0) {
+      return { ok: false, code: "SCAN_IN_PROGRESS", message: `A scan of ${domain} is already running. Its report will open when it finishes.` };
+    }
+    if (countRunningReports(user.id) >= MAX_RUNNING_SCANS_PER_ACCOUNT) {
+      return {
+        ok: false,
+        code: "SCAN_IN_PROGRESS",
+        message: `You already have ${MAX_RUNNING_SCANS_PER_ACCOUNT} scans running. Start another when one finishes — nothing has been counted.`,
+      };
+    }
+    if (!consumeScan(subscription.id)) {
+      return {
+        ok: false,
+        code: "LIMIT_REACHED",
+        message: limitReachedMessage(subscription),
+      };
+    }
+    const report = createRunningReport({
+      userId: user.id,
+      websiteId: website.id,
+      subscriptionId: subscription.id,
+      url: parsed.target.url.toString(),
+      domain,
+      planId: subscription.planId,
+      planName: subscription.planName,
+      engineVersion: ENGINE_VERSION,
+      analysisMode: "live",
+      features,
+      pageLimit,
+    });
+    return { ok: true, report };
   });
+  if (!claim.ok) {
+    trackServerEvent("scan_blocked", { key: `blocked:${newUuid()}`, userId: user.id, props: { reason: claim.code } });
+    return claim;
+  }
+  const report = claim.report;
   trackServerEvent("scan_started", { key: `scan:${report.id}`, userId: user.id, props: { plan: subscription.planId } });
 
+  // ── 6. The scan itself, as a background job ───────────────────────
+  const job = runScanJob(report.id, () =>
+    runAuditJob({ user, report, subscription, domain, websiteId: website.id, features, pageLimit }),
+  );
+  if (options.wait) {
+    const result = await job;
+    if (!result) {
+      return { ok: false, code: "ANALYSIS_FAILED", message: "The scan failed unexpectedly. Your scan has been credited back — please try again." };
+    }
+    if (!result.ok) return result;
+    return { ok: true, report: findReport(report.id) ?? report, demo: result.demo };
+  }
+  void job;
+  return { ok: true, report, demo: false, queued: true };
+}
+
+/**
+ * The work of one scan: crawl and analyse, add the smart insights, store
+ * the report and its training row — or fail it, with a reason and a
+ * refund. Never throws.
+ */
+async function runAuditJob(input: {
+  user: User;
+  report: Report;
+  subscription: NonNullable<ReturnType<typeof getActiveSubscription>>;
+  domain: string;
+  websiteId: string;
+  features: FeatureKey[];
+  pageLimit: number;
+}): Promise<{ ok: true; demo: boolean } | { ok: false; code: ApiErrorCode; message: string }> {
+  const { user, report, subscription, domain, features } = input;
   let outcome: AnalysisOutcome;
   let demo = false;
 
   try {
-    outcome = await runAnalysis(domain, features);
+    outcome = await runAnalysis(domain, features, { pageLimit: input.pageLimit });
   } catch (error) {
     const unreachable = error instanceof AnalysisFailure && error.unreachable;
 
@@ -219,54 +294,113 @@ export async function startAudit(
         error instanceof AnalysisFailure
           ? error.message
           : "The scan failed unexpectedly. Your scan has been credited back — please try again.";
-      failReport(report.id, message);
+      if (!(error instanceof AnalysisFailure)) {
+        console.error(`[analysis] scan ${report.id} failed: ${error instanceof Error ? error.message : error}`);
+      }
+      const code: ApiErrorCode = unreachable ? "SITE_UNREACHABLE" : "ANALYSIS_FAILED";
+      // Not the user's fault, so the scan is given back (once).
+      failAndRefund(report.id, subscription.id, message, code);
       trackServerEvent("scan_failed", {
         key: `scanfail:${report.id}`,
         userId: user.id,
-        props: { plan: subscription.planId, reason: unreachable ? "SITE_UNREACHABLE" : "ANALYSIS_FAILED" },
+        props: { plan: subscription.planId, reason: code },
       });
-      // Not the user's fault, so give the scan back.
-      refundScan(subscription.id);
-      return {
-        ok: false,
-        code: unreachable ? "SITE_UNREACHABLE" : "ANALYSIS_FAILED",
-        message,
-      };
+      return { ok: false, code, message };
     }
   }
 
-  completeReport({
-    reportId: report.id,
-    score: outcome.score,
-    verdict: outcome.verdict,
-    categories: outcome.categories.map((category) => ({
-      id: category.id,
-      name: category.name,
-      score: category.score,
-      weight: category.weight,
-      passed: category.passed,
-      warnings: category.warnings,
-      critical: category.critical,
-    })),
-    passedCount: outcome.passedCount,
-    warningCount: outcome.warningCount,
-    criticalCount: outcome.criticalCount,
-    pagesFetched: outcome.pagesFetched,
-    issues: toIssues(outcome),
-    features: outcome.features,
-    locked: outcome.locked,
-    pages: outcome.pages,
-    metrics: outcome.metrics,
-    checksRun: outcome.checksRun,
-  });
+  try {
+    // ── Smart insights (features 48–53) over the scored scan ──────────
+    // They explain the result (estimate, likely reasons, comparison, what
+    // changed, timeline, schedule) and never change the score or counts.
+    const vector = buildFeatureVector(outcome);
+    const estimate = safeEstimate(vector);
+    let insightLines: AnalysisOutcome["findings"] = [];
+    try {
+      insightLines = (
+        await runInsights(INSIGHTS, {
+          userId: user.id,
+          domain,
+          reportId: report.id,
+          websiteId: input.websiteId,
+          planId: subscription.planId,
+          outcome,
+          vector,
+          estimate,
+          features: new Set<string>(features),
+          demo,
+          now: Date.now(),
+        })
+      ).findings;
+    } catch (error) {
+      console.error(`[analysis] insights failed for ${report.id}: ${error instanceof Error ? error.message : error}`);
+    }
+    const reported: AnalysisOutcome = insightLines.length
+      ? { ...outcome, findings: [...outcome.findings, ...insightLines], checksRun: outcome.checksRun + insightLines.length }
+      : outcome;
 
-  touchWebsite(website.id);
-  trackServerEvent("scan_completed", { key: `scanok:${report.id}`, userId: user.id, props: { plan: subscription.planId } });
+    const stored = completeReport({
+      reportId: report.id,
+      score: outcome.score,
+      verdict: outcome.verdict,
+      categories: outcome.categories.map((category) => ({
+        id: category.id,
+        name: category.name,
+        score: category.score,
+        weight: category.weight,
+        passed: category.passed,
+        warnings: category.warnings,
+        critical: category.critical,
+      })),
+      passedCount: outcome.passedCount,
+      warningCount: outcome.warningCount,
+      criticalCount: outcome.criticalCount,
+      pagesFetched: outcome.pagesFetched,
+      issues: toIssues(reported),
+      features: outcome.features,
+      locked: outcome.locked,
+      pages: outcome.pages,
+      metrics: outcome.metrics,
+      checksRun: reported.checksRun,
+    });
+    if (!stored) {
+      // The scan stopped beating and was already failed and refunded by
+      // the stale sweep; its late result is discarded.
+      const latest = findReport(report.id);
+      return {
+        ok: false,
+        code: (latest?.errorCode as ApiErrorCode | null) ?? "ANALYSIS_FAILED",
+        message: latest?.errorMessage ?? "The analysis was interrupted before it finished. The scan was returned to your monthly allowance.",
+      };
+    }
 
-  // Re-read rather than merging in memory: the stored row is what every
-  // other screen will show, so the caller should see exactly that.
-  const stored = findReport(report.id);
-  return { ok: true, report: stored ?? report, demo };
+    touchWebsite(input.websiteId);
+
+    // Training data for the prediction model (lib/ml): the scan's numbers,
+    // never its text. Demo reports are skipped; a failure here is logged
+    // and never fails the scan.
+    collectScanFeatures({
+      reportId: report.id,
+      userId: user.id,
+      domain,
+      planId: subscription.planId,
+      demo,
+      outcome,
+      vector,
+      estimate,
+    });
+    trackServerEvent("scan_completed", { key: `scanok:${report.id}`, userId: user.id, props: { plan: subscription.planId } });
+    return { ok: true, demo };
+  } catch (error) {
+    console.error(`[analysis] storing scan ${report.id} failed: ${error instanceof Error ? error.message : error}`);
+    try {
+      failAndRefund(report.id, subscription.id, "The scan finished but its report couldn't be saved. Your scan has been credited back — please try again.", "ANALYSIS_FAILED");
+    } catch (inner) {
+      // The sweep fails and refunds it within 90 seconds.
+      console.error(`[analysis] could not mark ${report.id} failed: ${inner instanceof Error ? inner.message : inner}`);
+    }
+    return { ok: false, code: "ANALYSIS_FAILED", message: "The scan failed unexpectedly. Your scan has been credited back — please try again." };
+  }
 }
 
 export { CATEGORY_META };

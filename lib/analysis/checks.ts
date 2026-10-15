@@ -80,6 +80,27 @@ export type SiteSnapshot = {
   sitemap: SitemapReport | null;
   /** Sampled sitemap URLs that did not answer. */
   sitemapUnreachable: string[];
+  /**
+   * Content calculations that threw while the snapshot was built. The
+   * checks that read them report "error" instead of judging a null.
+   * Optional so snapshots built before this field (the demo) still work.
+   */
+  signalErrors?: SignalName[];
+};
+
+export type SignalName = "ai" | "human" | "originality" | "duplicates" | "ads" | "adsTxt" | "structure" | "sitemap";
+
+/** Which calculation each check reads, for error isolation. */
+const CHECK_SIGNAL: Record<string, SignalName> = {
+  "cnt-ai-estimate": "ai",
+  "cnt-originality": "originality",
+  "cnt-duplicate-pages": "duplicates",
+  "cnt-human-signals": "human",
+  "nav-depth": "structure",
+  "nav-orphans": "structure",
+  "tec-sitemap-detail": "sitemap",
+  "tec-ad-density": "ads",
+  "tec-ads-txt": "adsTxt",
 };
 
 type Outcome = {
@@ -143,6 +164,21 @@ function short(url: string): string {
   }
 }
 
+/**
+ * The pages that carry the site's content: everything read except the
+ * required policy pages. A privacy policy or contact page is short by
+ * nature, and counting it as "thin content" marks a well-built site down
+ * for having exactly the pages a reviewer asks for. Falls back to every
+ * page when nothing else was read.
+ */
+export function contentPages(s: SiteSnapshot): PageAnalysis[] {
+  const policyUrls = new Set(
+    Object.values(s.policyPages).flatMap((page) => (page ? [page.url] : [])),
+  );
+  const rest = s.pages.filter((page) => !policyUrls.has(page.url));
+  return rest.length > 0 ? rest : s.pages;
+}
+
 export const CHECKS: CheckDef[] = [
   // ── Content quality ──────────────────────────────────────────────
   {
@@ -153,11 +189,12 @@ export const CHECKS: CheckDef[] = [
     failPriority: "high",
     warnPriority: "medium",
     run: (s) => {
-      const counts = s.pages.map((page) => page.wordCount);
+      const pages = contentPages(s);
+      const counts = pages.map((page) => page.wordCount);
       const average = Math.round(
         counts.reduce((sum, n) => sum + n, 0) / Math.max(1, counts.length),
       );
-      const evidence = `${average} words average across ${s.pages.length} page(s)`;
+      const evidence = `${average} words average across ${pages.length} content page(s); policy pages are not counted`;
       if (average >= 700) {
         return { status: "pass", detail: `Pages average ${average} words — comfortably substantial.`, evidence };
       }
@@ -171,7 +208,7 @@ export const CHECKS: CheckDef[] = [
       }
       return {
         status: "fail",
-        detail: `Pages average only ${average} words. This is the single most common reason applications are rejected.`,
+        detail: `Pages average only ${average} words. Thin content is one of the most commonly cited reasons for rejection.`,
         fix: "Rewrite your main pages to 700–1,500 words of original, useful content before reapplying.",
         evidence,
       };
@@ -185,7 +222,8 @@ export const CHECKS: CheckDef[] = [
     failPriority: "high",
     warnPriority: "medium",
     run: (s) => {
-      const thin = s.pages.filter((page) => page.wordCount < 250);
+      const pages = contentPages(s);
+      const thin = pages.filter((page) => page.wordCount < 250);
       if (thin.length === 0) {
         return { status: "pass", detail: "No page we read falls under 250 words." };
       }
@@ -200,7 +238,7 @@ export const CHECKS: CheckDef[] = [
       }
       return {
         status: "fail",
-        detail: `${thin.length} of the ${s.pages.length} pages we read are under 250 words.`,
+        detail: `${thin.length} of the ${pages.length} content pages we read are under 250 words.`,
         fix: "Expand or remove the thin pages. A small site of strong pages outperforms a large one of stubs.",
         evidence,
       };
@@ -366,7 +404,7 @@ export const CHECKS: CheckDef[] = [
       if (hits.length >= 2) {
         return {
           status: "fail",
-          detail: `The site still shows ${list(hits)}. Reviewers treat an unfinished site as an automatic no.`,
+          detail: `The site still shows ${list(hits)}. An unfinished-looking site is one of the most common reasons reviewers turn an application down.`,
           fix: "Delete every default post, page and tagline your theme shipped with.",
           evidence: hits.join("; "),
         };
@@ -1128,7 +1166,7 @@ export const CHECKS: CheckDef[] = [
       return {
         status: "fail",
         detail: `Originality signal ${o.score}/100. We found ${list(found, 4)}. ${scope}`,
-        fix: "Rewrite or remove the template and syndicated passages. A site built largely from other people's text is the most common reason an application is declined.",
+        fix: "Rewrite or remove the template and syndicated passages. A site built largely from other people's text is one of the most commonly cited reasons an application is declined.",
         evidence: o.notes.join(" ") || undefined,
       };
     },
@@ -1147,7 +1185,7 @@ export const CHECKS: CheckDef[] = [
     feature: "duplicate_content_check",
     run: (s) => {
       const d = s.duplicates;
-      if (!d || d.comparable < 2) {
+      if (!d || (d.comparable < 2 && d.pairs.length === 0)) {
         return {
           status: "warn",
           detail:
@@ -1170,7 +1208,7 @@ export const CHECKS: CheckDef[] = [
       if (exact.length > 0) {
         return {
           status: "fail",
-          detail: `${exact.length} pair(s) of pages are effectively the same text (${exact[0]?.overlap}% overlap on the closest pair), out of ${d.comparable} compared.`,
+          detail: `${exact.length} pair(s) of pages are effectively the same text (${exact[0]?.overlap}% overlap on the closest pair), out of ${d.comparable + (d.shortCompared ?? 0)} compared.`,
           fix: "Consolidate the duplicates into one page and redirect the rest, or set a canonical tag pointing at the version you want indexed.",
           evidence,
         };
@@ -1560,6 +1598,38 @@ export function checkCountFor(features: readonly FeatureKey[]): number {
   return CHECKS.filter((check) => active.has(featureForCheck(check))).length;
 }
 
+const ERROR_DETAIL =
+  "This check couldn't run because of an error on our side. It says nothing about your site and is left out of the score.";
+
+/**
+ * Runs one check so that its failure stays its own: an exception, or a
+ * calculation it depends on having failed, becomes an "error" result
+ * instead of ending the whole scan. The cause is logged for the operator;
+ * the report only says the check couldn't run.
+ */
+function runIsolated(check: CheckDef, snapshot: SiteSnapshot): Outcome {
+  const signal = CHECK_SIGNAL[check.id];
+  if (signal && snapshot.signalErrors?.includes(signal)) {
+    return { status: "error", detail: ERROR_DETAIL };
+  }
+  try {
+    const outcome = check.run(snapshot);
+    if (!outcome || !["pass", "warn", "fail"].includes(outcome.status) || typeof outcome.detail !== "string") {
+      throw new Error("invalid result");
+    }
+    return outcome;
+  } catch (error) {
+    console.error(`[analysis] check ${check.id} failed: ${describeError(error)}`);
+    return { status: "error", detail: ERROR_DETAIL };
+  }
+}
+
+/** Name and first line of an error — enough to find it, nothing about the request. */
+export function describeError(error: unknown): string {
+  if (error instanceof Error) return `${error.name}: ${error.message.split("\n")[0]?.slice(0, 200) ?? ""}`;
+  return "non-Error thrown";
+}
+
 /**
  * Runs the checks this account has paid for.
  *
@@ -1581,7 +1651,7 @@ export function runChecks(
     const feature = featureForCheck(check);
     if (!active.has(feature)) continue;
 
-    const outcome = check.run(snapshot);
+    const outcome = runIsolated(check, snapshot);
     const priority: IssuePriority =
       outcome.status === "fail"
         ? check.failPriority

@@ -10,6 +10,7 @@ import { alertEmailSetting, graceMinutes, lastJobRun } from "@/lib/alerts/settin
 import { emailStatus } from "@/lib/email";
 import { formatDateTime } from "@/lib/format";
 import { formatMoney } from "@/lib/money";
+import { SCHEDULED_JOBS, scheduleHealth, schedulerSecretConfigured, type ScheduledJob } from "@/lib/scheduler";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,26 @@ const STATUS: Record<string, { label: string; tone: "pass" | "warn" | "fail" | "
   retry: { label: "Will retry", tone: "warn" },
   failed: { label: "Failed", tone: "fail" },
   skipped: { label: "Not sent", tone: "neutral" },
+};
+
+const TRIGGER_LABEL: Record<"scheduler" | "background" | "admin", string> = {
+  scheduler: "by the scheduler",
+  background: "by the server's background check",
+  admin: "by an admin (Run now)",
+};
+
+const JOB_LABEL: Record<ScheduledJob, string> = {
+  "checkout-alerts": "Payment & checkout alerts",
+  ml: "Prediction feedback & training",
+  rescans: "Weekly rescans (Pro)",
+};
+
+const HEALTH_LABEL: Record<ReturnType<typeof scheduleHealth>["state"], string> = {
+  not_configured: "Not configured",
+  never_called: "Not verified — never called",
+  stale: "Not called recently",
+  failing: "Last call failed",
+  verified: "Verified",
 };
 
 const CHECKOUT_STATUS: Record<string, string> = {
@@ -44,7 +65,10 @@ export default async function NotificationSettingsPage() {
   const counts = notificationCounts();
   const history = listNotifications(100);
   const checkouts = listCheckoutSessions(30);
-  const cronConfigured = (process.env.CRON_SECRET?.trim().length ?? 0) >= 32;
+  const cronConfigured = schedulerSecretConfigured();
+  const now = Date.now();
+  const health = Object.fromEntries(SCHEDULED_JOBS.map((job) => [job, scheduleHealth(job, now)])) as Record<ScheduledJob, ReturnType<typeof scheduleHealth>>;
+  const alertsSchedule = health["checkout-alerts"];
   const backgroundTick = process.env.CHECKOUT_ALERTS_BACKGROUND?.trim().toLowerCase() !== "off";
   const active = Boolean(setting.email) && provider.configured;
 
@@ -52,7 +76,8 @@ export default async function NotificationSettingsPage() {
   if (!setting.email) warnings.push("No alert email is set, so payment and checkout alerts are off. Nothing will be sent until you add one.");
   if (!provider.configured) warnings.push(`Email delivery isn't configured: ${provider.problem} Alerts are queued and retried, but none can be sent until this is fixed.`);
   if (provider.configured && provider.provider === "console") warnings.push("Development mode: alerts are printed to the server log instead of being emailed.");
-  if (!cronConfigured) warnings.push("No scheduler is configured (CRON_SECRET). Abandoned checkouts are still checked every few minutes while the server runs, but a scheduled job is more reliable — see the README.");
+  if (!cronConfigured) warnings.push("No scheduler is configured (CRON_SECRET). Abandoned checkouts are only checked while the server is awake (every 5 minutes) — on a host that sleeps when idle, they may not be checked at all. Set up the scheduled job in the README.");
+  else if (alertsSchedule.state !== "verified") warnings.push(`Scheduler not verified: ${alertsSchedule.message}`);
 
   return (
     <div className="space-y-6">
@@ -73,7 +98,7 @@ export default async function NotificationSettingsPage() {
           </p>
           <p className="mt-0.5 text-cloud-300">
             {active
-              ? `Delivered through ${provider.configured ? provider.provider : "—"}.`
+              ? `Delivered through ${provider.configured ? provider.label : "—"}.`
               : "Fix the items below to start receiving payment and checkout alerts."}
           </p>
         </div>
@@ -105,17 +130,55 @@ export default async function NotificationSettingsPage() {
           </div>
           <div>
             <dt className="text-cloud-400">Last check for abandoned checkouts</dt>
-            <dd className="mt-0.5 text-cloud-50">{lastRun ? formatDateTime(lastRun.at) : "Not run yet"}</dd>
+            <dd className="mt-0.5 text-cloud-50">
+              {lastRun ? formatDateTime(lastRun.at) : "Not run yet"}
+              {lastRun?.trigger ? ` · ${TRIGGER_LABEL[lastRun.trigger]}` : ""}
+            </dd>
             {lastRun ? <dd className="text-[0.8125rem] text-cloud-400">{lastRun.summary}</dd> : null}
           </div>
           <div>
             <dt className="text-cloud-400">Schedule</dt>
-            <dd className="mt-0.5 text-cloud-50">
-              {cronConfigured ? "Scheduler endpoint enabled" : "No scheduler secret"}
-              {backgroundTick ? " · server checks every 5 min" : ""}
+            <dd className="mt-0.5 text-cloud-50">{HEALTH_LABEL[alertsSchedule.state]}</dd>
+            <dd className="text-[0.8125rem] text-cloud-400">
+              {"last" in alertsSchedule ? `Last scheduler call ${formatDateTime(alertsSchedule.last.at)}. ` : ""}
+              {backgroundTick ? "The server also checks every 5 minutes while it is awake." : "The server's own 5-minute check is off."}
             </dd>
           </div>
         </dl>
+      </Panel>
+
+      <Panel
+        title="Scheduled jobs"
+        description="What an outside scheduler has actually called, with the CRON_SECRET. The server's own background check and the Run now button don't count here."
+      >
+        <TableShell
+          head={
+            <>
+              <Th>Job</Th>
+              <Th>Endpoint</Th>
+              <Th>Status</Th>
+              <Th>Last scheduler call</Th>
+            </>
+          }
+        >
+          {SCHEDULED_JOBS.map((job) => {
+            const h = health[job];
+            return (
+              <Tr key={job}>
+                <Td>{JOB_LABEL[job]}</Td>
+                <Td className="font-mono text-[0.8125rem]">POST /api/internal/jobs/{job}</Td>
+                <Td>
+                  <Badge tone={h.state === "verified" ? "pass" : h.state === "failing" ? "fail" : "warn"}>{HEALTH_LABEL[h.state]}</Badge>
+                  <span className="mt-1 block text-[0.8125rem] text-cloud-400">{h.message}</span>
+                </Td>
+                <Td>
+                  {"last" in h ? formatDateTime(h.last.at) : "Never"}
+                  {"last" in h ? <span className="mt-1 block text-[0.8125rem] text-cloud-400">{h.last.summary}</span> : null}
+                </Td>
+              </Tr>
+            );
+          })}
+        </TableShell>
       </Panel>
 
       <Panel

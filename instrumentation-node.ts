@@ -1,4 +1,6 @@
 import { runAlertJobThrottled } from "./lib/alerts/job";
+import { runMlJobThrottled } from "./lib/ml/job";
+import { runScheduledRescansThrottled } from "./lib/schedules/job";
 
 /**
  * A light background tick for payment/checkout alerts on the long-running
@@ -18,4 +20,37 @@ if (!disabled && !building) {
     void runAlertJobThrottled(4 * 60_000);
   }, 5 * 60_000);
   timer.unref?.();
+}
+
+/**
+ * The prediction system's tick (lib/ml/job.ts): deferred feedback,
+ * feedback emails, and nightly retraining. Like the alerts tick it is a
+ * safety net beside POST /api/internal/jobs/ml; every step is claimed in
+ * the database, so running both is harmless.
+ *
+ * Set ML_BACKGROUND=off to disable it.
+ */
+const mlDisabled = process.env.ML_BACKGROUND?.trim().toLowerCase() === "off";
+
+if (!mlDisabled && !building) {
+  const mlTimer = setInterval(() => {
+    void runMlJobThrottled(4 * 60_000);
+  }, 5 * 60_000);
+  mlTimer.unref?.();
+}
+
+/**
+ * Weekly rescans (lib/schedules/job.ts): runs due rescans and sends change
+ * emails. A safety net beside POST /api/internal/jobs/rescans; schedules
+ * are claimed in the database, so running both never doubles a scan.
+ *
+ * Set RESCANS_BACKGROUND=off to disable it.
+ */
+const rescansDisabled = process.env.RESCANS_BACKGROUND?.trim().toLowerCase() === "off";
+
+if (!rescansDisabled && !building) {
+  const rescanTimer = setInterval(() => {
+    void runScheduledRescansThrottled(4 * 60_000);
+  }, 5 * 60_000);
+  rescanTimer.unref?.();
 }

@@ -16,6 +16,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 import { registerVerified, startMailSink } from "./lib/mail-sink.mjs";
+import { isolatedServerEnv } from "./lib/server-env.mjs";
 
 const dataDir = await mkdtemp(path.join(tmpdir(), "aec-auth-flow-"));
 const mail = await startMailSink();
@@ -31,12 +32,12 @@ function startServer() {
     ["node_modules/next/dist/bin/next", "start", "-p", String(port)],
     {
       cwd: process.cwd(),
-      env: {
+      env: isolatedServerEnv({
         ...process.env,
         DATA_DIR: dataDir,
         AUTH_SECRET: "test-auth-secret-that-is-long-enough-to-be-safe-12345",
         ...mail.env,
-      },
+      }),
       stdio: ["ignore", "ignore", "inherit"],
     },
   );

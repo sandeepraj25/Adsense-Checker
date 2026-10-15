@@ -53,6 +53,7 @@ export default async function AdminPlansPage() {
           }`,
     siteLimit: plan.siteLimit,
     scanLimit: plan.scanLimit,
+    pagesPerScan: plan.pagesPerScan,
     active: plan.active,
     purchasable: plan.purchasable,
     featured: plan.featured,

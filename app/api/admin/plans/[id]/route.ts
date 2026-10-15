@@ -10,6 +10,7 @@ import {
   str,
   strList,
 } from "@/lib/http";
+import { revokeFeaturesFromActive } from "@/lib/db/billing";
 import { getPlan, resetPlan, updatePlan, type PlanPatch } from "@/lib/plan-catalogue";
 import { isFeatureKey, isPlanId, type FeatureKey } from "@/lib/plans";
 
@@ -77,6 +78,8 @@ export async function PATCH(
     if (siteLimit !== null) patch.siteLimit = siteLimit;
     const scanLimit = int(body.scanLimit);
     if (scanLimit !== null) patch.scanLimit = scanLimit;
+    const pagesPerScan = int(body.pagesPerScan);
+    if (pagesPerScan !== null) patch.pagesPerScan = pagesPerScan;
 
     const active = bool(body.active);
     if (active !== null) patch.active = active;
@@ -129,7 +132,23 @@ export async function PATCH(
       });
     }
 
-    return jsonOk({ plan: result.after, changed: result.changed });
+    // Features switched off stay with current subscribers until their paid
+    // period ends — unless the admin explicitly asked to remove them now.
+    let revokedFrom = 0;
+    const removed = before ? before.features.filter((key) => !result.after.features.includes(key)) : [];
+    if (bool(body.revokeFromCurrent) === true && removed.length > 0) {
+      revokedFrom = revokeFeaturesFromActive(id, removed);
+      recordAdminAction({
+        admin,
+        action: "plan.features_revoked",
+        targetType: "plan",
+        targetId: id,
+        targetLabel: result.after.name,
+        detail: `Removed ${removed.join(", ")} from ${revokedFrom} current subscription(s)`,
+      });
+    }
+
+    return jsonOk({ plan: result.after, changed: result.changed, revokedFrom });
   } catch (error) {
     return jsonServerError("admin/plans/patch", error);
   }

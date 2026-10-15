@@ -1,0 +1,2 @@
+this is not valid
+google.com pub-123 DIRECT

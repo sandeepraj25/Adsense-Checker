@@ -20,8 +20,13 @@ import {
 } from "@/lib/db/billing";
 import { checkoutOptions, checkoutOptionsFor, gatewayLabel } from "@/lib/payments";
 import { formatDate, plural } from "@/lib/format";
-import { listActivePlans } from "@/lib/plan-catalogue";
+import { getPlan, listActivePlans } from "@/lib/plan-catalogue";
+import { yearlyOffer } from "@/lib/billing/offer";
+import { yearlyBillingEnabled } from "@/lib/billing/yearly-settings";
+import { CycleSwitcher } from "@/components/pricing/CycleSwitcher";
+import { RenewalCycleControl } from "@/components/dashboard/RenewalCycleControl";
 import { formatMoney } from "@/lib/money";
+import { pagesPerScanFor } from "@/lib/limits";
 import { siteCurrency } from "@/lib/site-currency";
 
 export const metadata: Metadata = {
@@ -44,6 +49,21 @@ export default async function BillingPage() {
   const planNames = Object.fromEntries(plans.map((plan) => [plan.id, plan.name]));
 
   const options = checkoutOptions();
+
+  // Monthly / yearly: the switch appears only when some plan has a valid
+  // yearly offer in the site currency. The renewal default is the cycle the
+  // customer scheduled, else the one they are on.
+  const yearlyOn = yearlyBillingEnabled();
+  const yearlyOffers = plans.map((plan) => yearlyOffer(plan, currency, yearlyOn)).filter((offer) => offer !== null);
+  const bestDiscount = Math.max(0, ...yearlyOffers.map((offer) => offer.discount ?? 0)) || null;
+  const renewCycle = current?.nextBillingCycle ?? current?.billingCycle ?? "monthly";
+  const renewal = !active && current && current.paymentStatus === "paid" ? { planId: current.planId } : null;
+  const currentPlan = active ? getPlan(active.planId) : null;
+  const scheduleTarget = active?.billingCycle === "yearly" ? "monthly" : "yearly";
+  const scheduleOffer = currentPlan ? yearlyOffer(currentPlan, currency, yearlyOn) : null;
+  const canSchedule =
+    Boolean(active && active.paymentStatus === "paid" && !active.isExpired && currentPlan?.purchasable) &&
+    (scheduleTarget === "monthly" || scheduleOffer !== null || active?.nextBillingCycle);
 
   const simulated =
     options.length > 0 &&
@@ -95,12 +115,15 @@ export default async function BillingPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          {/* Plans are sold monthly only, so this states the period rather than offering a switch. */}
-          <span className="inline-flex rounded-full border border-ink-700 bg-ink-900 p-1">
-            <span className="rounded-full bg-white px-4 py-1.5 text-[0.8125rem] font-medium text-cloud-50 shadow-[0_1px_2px_rgba(24,24,27,0.08)]">
-              Monthly
+          {/* Without a yearly offer plans are sold monthly only, so this states
+              the period; with one, the switch above the plan cards takes over. */}
+          {yearlyOffers.length === 0 ? (
+            <span className="inline-flex rounded-full border border-ink-700 bg-ink-900 p-1">
+              <span className="rounded-full bg-white px-4 py-1.5 text-[0.8125rem] font-medium text-cloud-50 shadow-[0_1px_2px_rgba(24,24,27,0.08)]">
+                Monthly
+              </span>
             </span>
-          </span>
+          ) : null}
           <ButtonLink href="/pricing" size="md" variant="ghost">
             <CreditCard className="size-4" aria-hidden />
             {active?.isUsable ? "Change plan" : "See plans"}
@@ -183,7 +206,16 @@ export default async function BillingPage() {
       ) : null}
 
       {/* ── Plans ────────────────────────────────────────────── */}
-      <BillingPlanCards plans={plans} current={active ?? null} currency={currency} options={checkoutOptionsFor(currency)} />
+      {yearlyOffers.length > 0 ? (
+        <CycleSwitcher
+          initial={renewCycle}
+          bestDiscount={bestDiscount}
+          monthly={<BillingPlanCards plans={plans} current={active ?? null} currency={currency} options={checkoutOptionsFor(currency)} cycle="monthly" yearlyOn={yearlyOn} renewal={renewal} />}
+          yearly={<BillingPlanCards plans={plans} current={active ?? null} currency={currency} options={checkoutOptionsFor(currency)} cycle="yearly" yearlyOn={yearlyOn} renewal={renewal} />}
+        />
+      ) : (
+        <BillingPlanCards plans={plans} current={active ?? null} currency={currency} options={checkoutOptionsFor(currency)} renewal={renewal} />
+      )}
 
       {/* ── Your subscription ─────────────────────────────────── */}
       <section className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
@@ -216,19 +248,40 @@ export default async function BillingPage() {
               </div>
 
               <dl className="mt-5 grid gap-x-6 gap-y-4 border-t border-ink-700 pt-5 sm:grid-cols-2 lg:grid-cols-3">
-                <Detail label="Monthly price">{`${formatMoney(current.amountPaise, current.currency)} / month`}</Detail>
+                <Detail label={current.billingCycle === "yearly" ? "Yearly price" : "Monthly price"}>
+                  {`${formatMoney(current.amountPaise, current.currency)} / ${current.billingCycle === "yearly" ? "year" : "month"}`}
+                </Detail>
+                <Detail label="Billing cycle">
+                  {current.billingCycle === "yearly" ? "Yearly" : "Monthly"}
+                  {current.nextBillingCycle ? ` → ${current.nextBillingCycle} at renewal` : ""}
+                </Detail>
                 <Detail label="Started">{formatDate(current.startsAt)}</Detail>
                 <Detail label={current.isExpired ? "Expired on" : "Valid until"}>{formatDate(current.expiresAt)}</Detail>
                 <Detail label="Billing month">
                   {current.cycleIndex} · {formatDate(current.cycleStart)} → {formatDate(current.cycleEnd)}
                 </Detail>
                 <Detail label="Allowance resets">{formatDate(current.cycleEnd)}</Detail>
+                <Detail label="Pages per scan">{pagesPerScanFor(current)}</Detail>
                 <Detail label="Websites allowed">{current.siteLimit === null ? "Unlimited" : current.siteLimit}</Detail>
                 <Detail label="Paid with">{current.gateway ? gatewayLabel(current.gateway) : "—"}</Detail>
                 <Detail label="Order ID" mono>{current.orderId ?? "—"}</Detail>
                 <Detail label="Payment ID" mono>{current.paymentId ?? "—"}</Detail>
                 <Detail label="Invoice ID" mono>{current.invoiceId ?? "—"}</Detail>
               </dl>
+
+              {canSchedule && active ? (
+                <RenewalCycleControl
+                  current={active.billingCycle}
+                  scheduled={active.nextBillingCycle}
+                  target={active.nextBillingCycle ?? scheduleTarget}
+                  renewsOn={formatDate(active.expiresAt)}
+                  offerNote={
+                    scheduleTarget === "yearly" && scheduleOffer
+                      ? `${formatMoney(scheduleOffer.price, currency)}/year${scheduleOffer.discount ? ` · save ${scheduleOffer.discount}%` : ""}`
+                      : null
+                  }
+                />
+              ) : null}
 
               {current.isCapped && !current.isExpired ? (
                 <div className="mt-5 rounded-xl border border-amber-400/20 bg-amber-400/[0.06] px-4 py-3 text-[0.875rem] leading-relaxed text-amber-400">
@@ -250,9 +303,9 @@ export default async function BillingPage() {
             <p className="text-[0.8125rem] font-medium text-cloud-400">Paid so far</p>
             <p className="t-data mt-1 text-[1.75rem] font-bold tracking-tight text-cloud-50">{totalPaidLabel}</p>
             <p className="mt-3 text-[0.875rem] leading-relaxed text-cloud-400">
-              Across {plural(paid.length, "successful payment")}. Plans are billed per month
+              Across {plural(paid.length, "successful payment")}. Plans are paid per billing period, monthly or yearly
               {active && !active.isExpired ? `, and this one runs until ${formatDate(active.expiresAt)}` : ""}.
-              Changing plan applies from the next payment; the month you have already paid for is never
+              Changing plan applies from the next payment; the period you have already paid for is never
               shortened.
             </p>
             <div className="mt-5 flex flex-wrap gap-2">

@@ -1,0 +1,5 @@
+{
+  "expect": "pass",
+  "unknownStatus": 200,
+  "summaryMatch": "Soft 404"
+}

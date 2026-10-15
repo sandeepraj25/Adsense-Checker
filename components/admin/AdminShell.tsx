@@ -24,6 +24,7 @@ import {
   BellRing,
   ChartNoAxesCombined,
   Coins,
+  BrainCircuit,
 } from "lucide-react";
 
 import { Avatar } from "@/components/account/Avatar";
@@ -34,6 +35,7 @@ import { cn } from "@/lib/cn";
 const NAV = [
   { label: "Overview", href: "/admin", icon: Gauge },
   { label: "Website analytics", href: "/admin/analytics", icon: ChartNoAxesCombined },
+  { label: "Prediction model", href: "/admin/ml", icon: BrainCircuit },
   { label: "Users", href: "/admin/users", icon: Users },
   { label: "Plans", href: "/admin/plans", icon: Layers },
   { label: "Pricing", href: "/admin/pricing", icon: Tags },

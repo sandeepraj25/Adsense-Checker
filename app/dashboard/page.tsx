@@ -14,6 +14,9 @@ import { getActiveSubscription, getLatestSubscription } from "@/lib/db/billing";
 import { entitlementBlock } from "@/lib/entitlement";
 import { formatDate, formatDateTime, plural } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { pagesPerScanFor } from "@/lib/limits";
+import { AdsenseFeedbackPrompt } from "@/components/dashboard/AdsenseFeedbackPrompt";
+import { dueFeedbackRequests } from "@/lib/ml/feedback";
 
 export const metadata: Metadata = {
   title: "Dashboard",
@@ -35,6 +38,8 @@ export default async function DashboardPage() {
   const sites = countWebsites(user.id);
   const last = latestReport(user.id);
   const now = Date.now();
+  // "Did AdSense approve your site?" — one site at a time, 14 days after a scan.
+  const feedback = user.isBlocked ? null : dueFeedbackRequests(user.id, now, 1)[0] ?? null;
 
   const firstName = user.name.trim().split(/\s+/)[0] ?? user.name;
   const usedPct = subscription
@@ -84,6 +89,14 @@ export default async function DashboardPage() {
         </div>
       ) : null}
 
+      {feedback ? (
+        <AdsenseFeedbackPrompt
+          requestId={feedback.id}
+          domain={feedback.domain}
+          scannedOn={feedback.scannedAt ? formatDate(feedback.scannedAt) : null}
+        />
+      ) : null}
+
       {/* ── plan + usage ───────────────────────────────────────── */}
       <section className="grid gap-5 lg:grid-cols-[1.15fr_1fr]">
         <div className="glass edge-light relative overflow-hidden rounded-xl p-5 sm:p-6">
@@ -93,6 +106,12 @@ export default async function DashboardPage() {
               <h2 className="t-display mt-2 text-[1.6rem] leading-none text-cloud-50">
                 {subscription?.planName ?? "No plan"}
               </h2>
+              {subscription && subscription.paymentStatus === "paid" ? (
+                <p className="mt-2 text-[0.8125rem] text-cloud-400">
+                  Billed {subscription.billingCycle === "yearly" ? "yearly" : "monthly"}
+                  {subscription.nextBillingCycle ? ` · ${subscription.nextBillingCycle} from renewal` : ""}
+                </p>
+              ) : null}
             </div>
             {subscription ? (
               <SubscriptionBadge status={subscription.status} />
@@ -179,7 +198,7 @@ export default async function DashboardPage() {
                 ? "No scans available"
                 : subscription.isCapped
                   ? `Monthly scan limit reached. Upgrade your plan or wait until your next billing cycle — the allowance resets on ${formatDate(subscription.cycleEnd)}.`
-                  : `${plural(subscription.scansRemaining, "scan")} left until ${formatDate(subscription.cycleEnd)}`}
+                  : `${plural(subscription.scansRemaining, "scan")} left until ${formatDate(subscription.cycleEnd)} · up to ${plural(pagesPerScanFor(subscription), "page")} per scan`}
             </p>
           </div>
 

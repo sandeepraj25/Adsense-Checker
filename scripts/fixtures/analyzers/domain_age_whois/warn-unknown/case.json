@@ -1,0 +1,6 @@
+{
+  "expect": "warn",
+  "now": "2026-10-13",
+  "whois": "No match for \"HOME-KITCHEN.TEST\".\n",
+  "summaryMatch": "not verified"
+}

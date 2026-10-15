@@ -30,6 +30,8 @@ import {
 
 import { AnalyticsChoicesButton } from "@/components/analytics/Tracker";
 import { PlanGrid } from "@/components/pricing/PlanGrid";
+import { CycleSwitcher } from "@/components/pricing/CycleSwitcher";
+import { yearlyOffer } from "@/lib/billing/offer";
 import { Container } from "@/components/ui/Container";
 import { UrlForm } from "@/components/ui/UrlForm";
 import PlatformMarquee from "@/components/home/PlatformMarquee";
@@ -768,6 +770,7 @@ export function HomePricing({
   currency,
   options,
   anyGateway,
+  yearlyOn = false,
 }: {
   plans: PlanRecord[];
   user: User | null;
@@ -775,7 +778,22 @@ export function HomePricing({
   currency: Currency;
   options: CheckoutOption[];
   anyGateway: boolean;
+  /** The site-wide yearly switch, read on the server by the page. */
+  yearlyOn?: boolean;
 }) {
+  const yearlyDiscounts = plans.map((plan) => yearlyOffer(plan, currency, yearlyOn)).filter((o) => o !== null).map((o) => o.discount ?? 0);
+  const grid = (cycle: "monthly" | "yearly") => (
+    <PlanGrid
+      plans={plans}
+      user={user}
+      subscription={subscription}
+      currency={currency}
+      options={options}
+      selectedPlanId={null}
+      cycle={cycle}
+      yearlyOn={yearlyOn}
+    />
+  );
   return (
     <section
       aria-labelledby="pricing-title"
@@ -810,14 +828,15 @@ export function HomePricing({
 
         {/* Pricing plans */}
         <div className="mt-10 sm:mt-14">
-          <PlanGrid
-            plans={plans}
-            user={user}
-            subscription={subscription}
-            currency={currency}
-            options={options}
-            selectedPlanId={null}
-          />
+          {yearlyDiscounts.length > 0 ? (
+            <CycleSwitcher
+              monthly={grid("monthly")}
+              yearly={grid("yearly")}
+              bestDiscount={Math.max(...yearlyDiscounts) || null}
+            />
+          ) : (
+            grid("monthly")
+          )}
         </div>
 
         {/* Additional pricing details */}

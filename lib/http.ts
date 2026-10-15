@@ -45,6 +45,7 @@ export type ApiErrorCode =
   | "EMAIL_UNCONFIGURED"
   | "EMAIL_DELIVERY_FAILED"
   | "NOT_FOUND"
+  | "SCAN_IN_PROGRESS"
   | "SERVER_ERROR";
 
 export type ApiFailure = {
@@ -114,6 +115,7 @@ const DEFAULT_STATUS: Record<ApiErrorCode, number> = {
   EMAIL_UNCONFIGURED: 503,
   EMAIL_DELIVERY_FAILED: 502,
   NOT_FOUND: 404,
+  SCAN_IN_PROGRESS: 409,
   SERVER_ERROR: 500,
 };
 

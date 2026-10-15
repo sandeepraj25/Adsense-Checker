@@ -407,6 +407,8 @@ export type DuplicateReport = {
   /** Share of pages involved in at least one pair, 0–1. */
   share: number;
   comparable: number;
+  /** Short pages (25–119 words) checked for exact copies only. */
+  shortCompared?: number;
 };
 
 /**
@@ -448,12 +450,37 @@ export function findDuplicates(pages: PageAnalysis[]): DuplicateReport {
     }
   }
 
+  // Short pages are too small to shingle fairly, but a short page that is
+  // word-for-word another page is still a duplicate — two copies of the
+  // same stub post are exactly what a reviewer notices. Exact match only.
+  const short = pages.filter((page) => page.wordCount >= 25 && page.wordCount < 120);
+  const byText = new Map<string, string[]>();
+  for (const page of short) {
+    const key = words(page.text.slice(0, 40_000)).join(" ");
+    byText.set(key, [...(byText.get(key) ?? []), page.url]);
+  }
+  for (const urls of byText.values()) {
+    for (let i = 1; i < urls.length; i += 1) {
+      const a = urls[0];
+      const b = urls[i];
+      if (!a || !b) continue;
+      pairs.push({ a, b, overlap: 100, kind: "duplicate" });
+      involved.add(a);
+      involved.add(b);
+    }
+  }
+
   pairs.sort((a, b) => b.overlap - a.overlap);
+  // Only short pages that turned out to be copies join the denominator, so
+  // a site without short duplicates scores exactly as before.
+  const shortInvolved = short.filter((page) => involved.has(page.url)).length;
+  const considered = comparable.length + shortInvolved;
 
   return {
     pairs: pairs.slice(0, 12),
-    share: comparable.length === 0 ? 0 : involved.size / comparable.length,
+    share: considered === 0 ? 0 : Math.min(1, involved.size / considered),
     comparable: comparable.length,
+    shortCompared: short.length,
   };
 }
 

@@ -23,7 +23,7 @@ const verdictCopy: Record<Report["verdict"], string> = {
     "The foundation is there, but a reviewer would find something to object to. Clear the blockers first, then re-check.",
 
   not_ready:
-    "There is enough missing here that an application would very likely be rejected. Work through the high-priority items below.",
+    "There is enough missing here that an application faces a high risk of rejection as the site stands. Work through the high-priority items below.",
 };
 
 /* ── score panel ─────────────────────────────────────────────── */

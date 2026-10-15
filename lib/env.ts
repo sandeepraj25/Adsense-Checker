@@ -19,12 +19,32 @@ export function ensureDataDir(): string {
   return DATA_DIR;
 }
 
-export const APP_URL = (
-  process.env.NEXT_PUBLIC_APP_URL?.trim() || "http://localhost:3000"
-).replace(/\/+$/, "");
+// NEXT_PUBLIC_APP_URL is the project's name for it; APP_URL is accepted too.
+//
+// Read when the server runs, not when it is built: Next replaces a literal
+// `process.env.NEXT_PUBLIC_…` in server code with the value it found at
+// build time (for example in the build machine's .env.local), which would
+// freeze every emailed link to wherever the app happened to be built and
+// ignore the server's own configuration. A computed key is never inlined.
+function runtimeEnv(name: string): string {
+  return (process.env as Record<string, string | undefined>)[name]?.trim() ?? "";
+}
+const CONFIGURED_APP_URL = runtimeEnv("NEXT_PUBLIC_APP_URL") || runtimeEnv("APP_URL");
+
+export const APP_URL = (CONFIGURED_APP_URL || "http://localhost:3000").replace(/\/+$/, "");
 
 /** Whether APP_URL was set explicitly rather than defaulted. */
-export const APP_URL_CONFIGURED = Boolean(process.env.NEXT_PUBLIC_APP_URL?.trim());
+export const APP_URL_CONFIGURED = Boolean(CONFIGURED_APP_URL);
+
+/**
+ * The origin to put in links inside emails. The configured site URL when
+ * there is one — a Host header is chosen by whoever sends the request, so
+ * it must not decide where a link in someone's inbox points. Falls back to
+ * the request's origin only when no URL is configured (local development).
+ */
+export function emailLinkOrigin(requestOrigin: string): string {
+  return APP_URL_CONFIGURED ? APP_URL : requestOrigin.replace(/\/+$/, "");
+}
 
 /**
  * Where profile photos are stored. Defaults to `<DATA_DIR>/avatars`, i.e.
@@ -187,6 +207,14 @@ function intFromEnv(name: string, fallback: number): number {
 /** Pages fetched per audit, including the homepage. Keeps audits polite. */
 export const ANALYSIS_MAX_PAGES = intFromEnv("ANALYSIS_MAX_PAGES", 6);
 export const ANALYSIS_TIMEOUT_MS = intFromEnv("ANALYSIS_TIMEOUT_MS", 12_000);
+/**
+ * Wall-clock budget for one whole scan. After it, no new request starts,
+ * requests in flight are cut to what is left, and the report is marked
+ * partial. Kept under the 60 s the analysis route is allowed to run.
+ */
+export const ANALYSIS_DEADLINE_MS = intFromEnv("ANALYSIS_DEADLINE_MS", 45_000);
+/** Ceiling for a large plan's scan (pages per scan stretch the limit up to this). */
+export const ANALYSIS_MAX_DEADLINE_MS = intFromEnv("ANALYSIS_MAX_DEADLINE_MS", 240_000);
 export const ANALYSIS_USER_AGENT =
   process.env.ANALYSIS_USER_AGENT?.trim() ||
   "AdSenseEligibilityChecker/1.0 (+audit bot; respects robots.txt)";

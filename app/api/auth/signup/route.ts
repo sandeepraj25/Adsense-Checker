@@ -3,6 +3,7 @@ import { beginRegistration } from "@/lib/auth/email-verification";
 import { hashPassword } from "@/lib/auth/password";
 import { jsonError, jsonOk, readJson, str } from "@/lib/http";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
+import { emailLinkOrigin } from "@/lib/env";
 import { requestOrigin } from "@/lib/request-origin";
 import {
   normalizeEmail,
@@ -73,7 +74,8 @@ export async function POST(request: Request) {
   }
 
   const passwordHash = await hashPassword(password);
-  const origin = requestOrigin(request.headers, request.url);
+  // Links in the email point at the configured site, not the Host header.
+  const origin = emailLinkOrigin(requestOrigin(request.headers, request.url));
 
   const outcome = await beginRegistration({
     name,

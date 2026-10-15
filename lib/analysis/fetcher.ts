@@ -40,6 +40,10 @@ export type FetchResult = {
   bytes: number;
   ms: number;
   truncated: boolean;
+  /** Response headers of the final response, lower-cased names. */
+  headers: Record<string, string>;
+  /** Every URL redirected through before the final one, in order. */
+  redirects: string[];
 };
 
 /**
@@ -206,9 +210,16 @@ async function readCapped(
 
 export async function fetchGuarded(
   target: string | URL,
-  options?: { accept?: string; maxBytes?: number; timeoutMs?: number },
+  options?: {
+    accept?: string;
+    maxBytes?: number;
+    timeoutMs?: number;
+    /** Defaults to ANALYSIS_USER_AGENT. Only the cloaking comparison changes it. */
+    userAgent?: string;
+  },
 ): Promise<FetchResult> {
   const started = Date.now();
+  const redirects: string[] = [];
   const maxBytes = options?.maxBytes ?? MAX_BYTES;
   const requestedUrl = typeof target === "string" ? target : target.toString();
 
@@ -237,7 +248,7 @@ export async function fetchGuarded(
           signal: controller.signal,
           cache: "no-store",
           headers: {
-            "User-Agent": ANALYSIS_USER_AGENT,
+            "User-Agent": options?.userAgent ?? ANALYSIS_USER_AGENT,
             Accept: options?.accept ?? "text/html,application/xhtml+xml",
             "Accept-Language": "en",
           },
@@ -267,6 +278,7 @@ export async function fetchGuarded(
           throw new AnalysisFailure("The site redirected somewhere invalid.", true);
         }
         await response.body?.cancel().catch(() => undefined);
+        redirects.push(current.toString());
         current = next;
         continue;
       }
@@ -284,6 +296,8 @@ export async function fetchGuarded(
         bytes: read.bytes,
         ms: Date.now() - started,
         truncated: read.truncated,
+        headers: Object.fromEntries([...response.headers.entries()].map(([k, v]) => [k.toLowerCase(), v])),
+        redirects,
       };
     }
 
@@ -293,33 +307,49 @@ export async function fetchGuarded(
   }
 }
 
-/** HEAD-like probe used for link checking; falls back to GET on 405. */
+/**
+ * HEAD-like probe used for link checking; a server that refuses HEAD is
+ * treated as reachable.
+ *
+ * Redirects are followed by hand, and every hop is screened exactly like
+ * the first URL. Letting fetch follow them would let a scanned site bounce
+ * this request to a private or metadata address after the first check.
+ */
 export async function probe(
   target: string,
   timeoutMs = 6_000,
 ): Promise<{ status: number; ok: boolean } | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const url = new URL(target);
-    await assertPublicHost(url);
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const response = await fetch(url, {
+    let current = new URL(target);
+    for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
+      await assertPublicHost(current);
+      const response = await fetch(current, {
         method: "HEAD",
-        redirect: "follow",
+        redirect: "manual",
         signal: controller.signal,
         cache: "no-store",
         headers: { "User-Agent": ANALYSIS_USER_AGENT },
       });
       await response.body?.cancel().catch(() => undefined);
+
+      const location = response.headers.get("location");
+      if (response.status >= 300 && response.status < 400 && location) {
+        if (hop === MAX_REDIRECTS) return null; // a loop or an absurd chain
+        current = new URL(location, current);
+        if (current.protocol !== "http:" && current.protocol !== "https:") return null;
+        continue;
+      }
       if (response.status === 405 || response.status === 501) {
         return { status: 200, ok: true }; // server dislikes HEAD, not a broken link
       }
       return { status: response.status, ok: response.ok };
-    } finally {
-      clearTimeout(timer);
     }
+    return null;
   } catch {
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }

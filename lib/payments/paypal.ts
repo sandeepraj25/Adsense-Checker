@@ -204,7 +204,7 @@ export const paypal: Gateway = {
             {
               reference_id: request.receipt,
               custom_id: `${request.userId}:${request.planId}:${request.currency}`,
-              description: `${request.planName} plan — 1 month`,
+              description: `${request.planName} plan — ${request.billingCycle === "yearly" ? "12 months" : "1 month"}`,
               amount: {
                 currency_code: money.currency,
                 value: money.value,

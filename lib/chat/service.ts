@@ -4,6 +4,8 @@ import { cookies } from "next/headers";
 import { many, one, run, tx } from "@/lib/db";
 import { authSecret, IS_PROD } from "@/lib/env";
 import { newId } from "@/lib/ids";
+import { getActiveSubscription } from "@/lib/db/billing";
+import { hasFeature } from "@/lib/entitlement";
 import { publish } from "./bus";
 
 /**
@@ -627,6 +629,8 @@ export type InboxItem = {
   status: "open" | "resolved";
   assignedAgent: { id: string; name: string } | null;
   customerOnline: boolean;
+  /** The customer's plan includes priority support (checked on the server, now). */
+  priority: boolean;
 };
 
 type InboxRow = ConversationRow & {
@@ -655,7 +659,27 @@ function toInboxItem(row: InboxRow, now: number): InboxItem {
     status: row.status === "resolved" ? "resolved" : "open",
     assignedAgent: row.assigned_agent_id ? { id: row.assigned_agent_id, name: row.agent_name ?? "Former member" } : null,
     customerOnline: row.customer_last_seen_at !== null && now - row.customer_last_seen_at < ONLINE_WINDOW_MS,
+    priority: row.user_id ? hasPrioritySupport(row.user_id) : false,
   };
+}
+
+/** Whether this account's current plan includes priority support. */
+function hasPrioritySupport(userId: string): boolean {
+  try {
+    return hasFeature(getActiveSubscription(userId), "priority_support");
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Inbox order. Open conversations waiting on a reply from a customer with
+ * priority support come first — that is what the plan promises — and
+ * everything else keeps the newest-first order it always had.
+ */
+function priorityFirst(items: InboxItem[]): InboxItem[] {
+  const waiting = (item: InboxItem) => item.priority && item.status === "open" && item.lastSender === "customer";
+  return [...items.filter(waiting), ...items.filter((item) => !waiting(item))];
 }
 
 const INBOX_SELECT = `
@@ -685,7 +709,7 @@ export function listInbox(filter: InboxFilter, myAgentId: string | null, search 
   if (term) sql = sql.replace(/LIKE \?/g, "LIKE ? ESCAPE '\\'");
   sql += " ORDER BY c.last_message_at DESC LIMIT 200";
   const now = Date.now();
-  const items = many<InboxRow>(sql, params).map((row) => toInboxItem(row, now));
+  const items = priorityFirst(many<InboxRow>(sql, params).map((row) => toInboxItem(row, now)));
   return filter === "unread" ? items.filter((item) => item.unread > 0) : items;
 }
 

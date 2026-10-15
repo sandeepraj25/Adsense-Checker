@@ -30,12 +30,15 @@
  * "@/..." path alias is satisfied with a symlink, and the compiled
  * modules are required directly. That skips Next entirely, so this runs
  * anywhere Node 22.5+ runs — including CI with no browser and no network.
- * Scans fall through to the demo engine when DNS is unavailable, which is
- * why every scan below asserts on structure rather than on content.
+ * Name resolution is switched off for this process (below), so scans fall
+ * through to the demo engine on every machine, connected or not — which
+ * is why every scan below asserts on structure rather than on content.
  *
  * Exits non-zero on the first failing expectation count.
  */
 
+import dns from "node:dns";
+import dnsPromises from "node:dns/promises";
 import { execFileSync } from "node:child_process";
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
@@ -49,6 +52,22 @@ const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 const workDir = mkdtempSync(path.join(tmpdir(), "verdict-verify-"));
 const outDir = path.join(workDir, "build");
 const dataDir = path.join(workDir, "data");
+
+// This suite asserts the offline path (demo reports, no pages fetched), so
+// it makes the machine offline for this process: every name except
+// localhost fails to resolve, exactly as on a machine without a network.
+// Without this, a run on a connected computer scanned the real example.com
+// and example.org, and the offline assertions depended on where it ran.
+const offline = (host) => Object.assign(new Error(`getaddrinfo ENOTFOUND ${host}`), { code: "ENOTFOUND", hostname: host });
+const isLocal = (host) => host === "localhost" || host === "127.0.0.1" || host === "::1";
+const realLookup = dns.lookup;
+const realPromiseLookup = dnsPromises.lookup;
+dnsPromises.lookup = async (host, options) => (isLocal(host) ? realPromiseLookup(host, options) : Promise.reject(offline(host)));
+dns.lookup = (host, options, callback) => {
+  const cb = typeof options === "function" ? options : callback;
+  if (isLocal(host)) return realLookup(host, options, callback);
+  process.nextTick(cb, offline(host));
+};
 
 // Read by lib/env.ts at import time, so it must be set before requiring.
 process.env.DATA_DIR = dataDir;
@@ -112,7 +131,7 @@ function compileLib() {
   mkdirSync(nodeModules, { recursive: true });
   symlinkSync(outDir, path.join(nodeModules, "@"), "dir");
   // Third-party packages lib/ imports at runtime, resolved from the project.
-  for (const pkg of ["libphonenumber-js", "sharp"]) {
+  for (const pkg of ["libphonenumber-js", "sharp", "nodemailer", "cheerio"]) {
     const source = path.join(projectRoot, "node_modules", pkg);
     try {
       symlinkSync(source, path.join(nodeModules, pkg), "dir");
@@ -372,11 +391,11 @@ async function main() {
   /* ── auditing with no plan ─────────────────────────────────────── */
 
   group("auditing without a plan");
-  const noPlan = await service.startAudit(user, "example.com");
+  const noPlan = await service.startAudit(user, "example.com", { wait: true });
   check("no plan is refused", noPlan.code, "NO_ACTIVE_PLAN");
   check("the refusal quotes the free allowance from the catalogue", noPlan.message.includes(`${free.scanLimit} scans a month`), true);
-  check("an unusable URL is refused before entitlement", (await service.startAudit(user, "not a url")).code, "INVALID_URL");
-  check("a private address is refused as a refusal, not a typo", (await service.startAudit(user, "127.0.0.1")).code, "URL_NOT_ALLOWED");
+  check("an unusable URL is refused before entitlement", (await service.startAudit(user, "not a url", { wait: true })).code, "INVALID_URL");
+  check("a private address is refused as a refusal, not a typo", (await service.startAudit(user, "127.0.0.1", { wait: true })).code, "URL_NOT_ALLOWED");
   check("nothing was recorded for any of that", audits.listReports(user.id).length, 0);
 
   /* ── the free tier ─────────────────────────────────────────────── */
@@ -390,18 +409,19 @@ async function main() {
   check("usage reads as 0 / 10", entitlement.usageLabel(freeSub), "0 / 10");
   check("one website", freeSub.siteLimit, 1);
   check("first month of the cycle", freeSub.cycleIndex, 1);
-  check("the allowance resets inside a month", freeSub.daysUntilReset <= 30, true);
+  // Calendar months since Phase 4: a month is 28–31 days.
+  check("the allowance resets inside a month", freeSub.daysUntilReset <= 31, true);
   check("nothing blocks it", entitlement.entitlementBlock(freeSub), null);
 
   group("a blocked host costs the customer nothing");
-  const refusedHost = await service.startAudit(user, "metadata.internal");
+  const refusedHost = await service.startAudit(user, "metadata.internal", { wait: true });
   check("an internal hostname is refused", refusedHost.code, "URL_NOT_ALLOWED");
   check("no scan was spent", billing.getActiveSubscription(user.id).scansUsed, 0);
   check("no website row was created", audits.listWebsites(user.id).length, 0);
   check("no report row was created", audits.listReports(user.id).length, 0);
 
   group("a free scan");
-  const firstRun = await service.startAudit(user, "https://example.com/some/path?x=1");
+  const firstRun = await service.startAudit(user, "https://example.com/some/path?x=1", { wait: true });
   check("scan accepted", firstRun.ok, true);
   if (!firstRun.ok) throw new Error(`scan failed: ${firstRun.code} ${firstRun.message}`);
   const report = firstRun.report;
@@ -442,8 +462,8 @@ async function main() {
   check("HTTPS checking is not locked", entitlement.featureBlock(freeSub, "https_check"), null);
 
   group("the free site and scan limits bite");
-  check("a second website is refused", (await service.startAudit(user, "example.org")).code, "SITE_LIMIT_REACHED");
-  check("re-scanning the site we know is allowed", (await service.startAudit(user, "www.example.com")).ok, true);
+  check("a second website is refused", (await service.startAudit(user, "example.org", { wait: true })).code, "SITE_LIMIT_REACHED");
+  check("re-scanning the site we know is allowed", (await service.startAudit(user, "www.example.com", { wait: true })).ok, true);
   check("the website row was reused", audits.listWebsites(user.id).length, 1);
   check("two scans consumed", billing.getActiveSubscription(user.id).scansUsed, 2);
 
@@ -451,8 +471,8 @@ async function main() {
   const capped = billing.getActiveSubscription(user.id);
   check("the month's allowance is spent", capped.isCapped, true);
   check("the plan itself is still fine", capped.status, "active");
-  check("the wording is the monthly one", entitlement.entitlementBlock(capped).message, "Monthly scan limit reached. Upgrade your plan or wait until your next billing cycle.");
-  check("a scan is refused", (await service.startAudit(user, "example.com")).code, "LIMIT_REACHED");
+  check("the wording is the monthly one", /^Monthly scan limit reached\. You've used all \d+ scans? on the .+ plan this month; your allowance resets on .+\. Upgrade your plan to scan again sooner\.$/.test(entitlement.entitlementBlock(capped).message), true);
+  check("a scan is refused", (await service.startAudit(user, "example.com", { wait: true })).code, "LIMIT_REACHED");
   check("usage reads as 10 / 10", entitlement.usageLabel(capped), "10 / 10");
 
   group("report ownership");
@@ -481,7 +501,9 @@ async function main() {
   check("granted without a payment", cycleSub.amountPaise, 0);
   check("the note records why", cycleSub.adminNote, "verify: three-month comp");
   check("a hundred scans this month", cycleSub.scanLimit, 100);
-  check("the cycle is a month, the subscription is three", [Math.round((cycleSub.cycleEnd - cycleSub.cycleStart) / DAY_MS), Math.round((cycleSub.expiresAt - cycleSub.startsAt) / DAY_MS)], [30, 90]);
+  // Calendar months since Phase 4 (lib/billing/cycle.ts), counted from the start.
+  const calendar = load("lib/billing/cycle.js");
+  check("the cycle is a month, the subscription is three", [cycleSub.cycleEnd, cycleSub.expiresAt], [calendar.addCalendarMonths(cycleSub.startsAt, 1), calendar.addCalendarMonths(cycleSub.startsAt, 3)]);
 
   for (let i = 0; i < 40; i++) billing.consumeScan(cycleSub.id);
   check("forty scans spent", billing.findSubscription(cycleSub.id).scansUsed, 40);
@@ -510,7 +532,7 @@ async function main() {
   const expiredSub = billing.createSubscription({ userId: expiredUser.id, plan: basicPlan, paymentStatus: "paid" });
   run("UPDATE subscriptions SET expires_at = ? WHERE id = ?", [Date.now() - 1_000, expiredSub.id]);
   const expiredRow = accounts.findUserById(expiredUser.id);
-  check("a scan is refused", (await service.startAudit(expiredRow, "example.com")).code, "NO_ACTIVE_PLAN");
+  check("a scan is refused", (await service.startAudit(expiredRow, "example.com", { wait: true })).code, "NO_ACTIVE_PLAN");
   check("the sweep marked it expired", billing.getLatestSubscription(expiredUser.id).status, "expired");
   check("no active subscription remains", billing.getActiveSubscription(expiredUser.id), null);
   check("the dashboard explains the expiry", entitlement.entitlementBlock(billing.getLatestSubscription(expiredUser.id)).code, "PLAN_EXPIRED");
@@ -638,7 +660,7 @@ async function main() {
   check("PDF export is not", entitlement.hasFeature(basicSub, "pdf_export"), false);
   check("page-by-page is not", entitlement.hasFeature(basicSub, "page_by_page_analysis"), false);
 
-  const basicRun = await service.startAudit(buyerRow, "example.com");
+  const basicRun = await service.startAudit(buyerRow, "example.com", { wait: true });
   check("a Basic scan runs", basicRun.ok, true);
   if (!basicRun.ok) throw new Error(`basic scan failed: ${basicRun.code} ${basicRun.message}`);
   check("AI likelihood is measured", typeof basicRun.report.metrics.aiLikelihood, "number");
@@ -665,7 +687,7 @@ async function main() {
   check("the plan was restored", catalogue.requirePlan("pro").features.includes("pdf_export"), true);
 
   group("a Pro scan measures what Pro sells");
-  const proRun = await service.startAudit(accounts.findUserById(proUser.id), "example.org");
+  const proRun = await service.startAudit(accounts.findUserById(proUser.id), "example.org", { wait: true });
   check("the scan runs", proRun.ok, true);
   if (!proRun.ok) throw new Error(`pro scan failed: ${proRun.code} ${proRun.message}`);
   const proReport = proRun.report;
@@ -700,7 +722,7 @@ async function main() {
     audits.failReport(stale.id, "Verification run.");
   }
   check("three rows for the site", one("SELECT COUNT(*) AS n FROM reports WHERE website_id = ?", [proSite.id]).n, 3);
-  check("a fresh scan is accepted", (await service.startAudit(accounts.findUserById(proUser.id), "example.org")).ok, true);
+  check("a fresh scan is accepted", (await service.startAudit(accounts.findUserById(proUser.id), "example.org", { wait: true })).ok, true);
   check("the failed rows were cleared, leaving the real ones", one("SELECT COUNT(*) AS n FROM reports WHERE website_id = ?", [proSite.id]).n, 2);
   check("no failed rows remain", one("SELECT COUNT(*) AS n FROM reports WHERE website_id = ? AND state = 'failed'", [proSite.id]).n, 0);
 
@@ -713,13 +735,13 @@ async function main() {
   check("every session is revoked", accounts.countSessions(cycleUser.id), 0);
   const blockedRow = accounts.findUserById(cycleUser.id);
   check("the row records the suspension", blockedRow.isBlocked, true);
-  const blockedAttempt = await service.startAudit(blockedRow, "example.com");
+  const blockedAttempt = await service.startAudit(blockedRow, "example.com", { wait: true });
   check("a scan is refused", blockedAttempt.code, "ACCOUNT_BLOCKED");
   check("the reason is quoted back", blockedAttempt.message.includes("Chargeback under review."), true);
   check("the same wording is what the dashboard shows", entitlement.accountBlock(blockedRow).code, "ACCOUNT_BLOCKED");
   check("their subscription is not destroyed", billing.getActiveSubscription(cycleUser.id).planId, "basic");
   check("unblocking succeeds", accounts.unblockUser(cycleUser.id), true);
-  check("service resumes", (await service.startAudit(accounts.findUserById(cycleUser.id), "example.com")).ok, true);
+  check("service resumes", (await service.startAudit(accounts.findUserById(cycleUser.id), "example.com", { wait: true })).ok, true);
   check("no suspension remains", entitlement.accountBlock(accounts.findUserById(cycleUser.id)), null);
 
   group("re-pricing a plan does not rewrite billing history");
@@ -749,7 +771,7 @@ async function main() {
   group("deleting an account leaves nothing behind");
   const doomed = makeUser("doomed");
   billing.createSubscription({ userId: doomed.id, plan: free, paymentStatus: "free", amountPaise: 0 });
-  const doomedRun = await service.startAudit(accounts.findUserById(doomed.id), "example.net");
+  const doomedRun = await service.startAudit(accounts.findUserById(doomed.id), "example.net", { wait: true });
   check("they have a report", doomedRun.ok, true);
   const footprint = accounts.summariseUserFootprint(doomed.id);
   check("the footprint is counted before deleting", footprint.reports >= 1 && footprint.subscriptions >= 1, true);
@@ -1047,7 +1069,7 @@ async function main() {
       analysisMode: "live",
       features: sweepSub.features,
     });
-    run("UPDATE reports SET started_at = ? WHERE id = ?", [startedAt, r.id]);
+    run("UPDATE reports SET started_at = ?, heartbeat_at = ? WHERE id = ?", [startedAt, startedAt, r.id]);
     return r;
   };
 
@@ -1068,7 +1090,7 @@ async function main() {
   check("a second sweep does not credit twice", billing.findSubscription(sweepSub.id).scansUsed, 1);
 
   run("UPDATE subscriptions SET scans_used = 0 WHERE id = ?", [sweepSub.id]);
-  run("UPDATE reports SET state = 'running', started_at = ? WHERE id = ?", [longAgo, fresh.id]);
+  run("UPDATE reports SET state = 'running', started_at = ?, heartbeat_at = ? WHERE id = ?", [longAgo, longAgo, fresh.id]);
   audits.failStaleReports();
   check("the credit never goes negative", billing.findSubscription(sweepSub.id).scansUsed, 0);
 }

@@ -1,0 +1,8 @@
+{
+  "expect": "warn",
+  "padBytes": {
+    "hero.jpg": 2500000,
+    "big.js": 1500000
+  },
+  "itemMatch": "At least|MB"
+}

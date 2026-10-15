@@ -17,7 +17,33 @@ import { normalizeDomain } from "@/lib/domain";
 import type { ApiErrorCode } from "@/lib/http";
 
 type Failure = { ok: false; code: ApiErrorCode; message: string };
-type Success = { ok: true; reportId: string; demo: boolean };
+type Success = { ok: true; reportId: string; demo: boolean; queued?: boolean };
+
+/** How often, and for how long, the page checks on a background scan. */
+const POLL_MS = 2_000;
+const POLL_FOR_MS = 6 * 60_000;
+
+type Settled = { ok: true; demo: boolean } | Failure | { ok: "pending" };
+
+/** Waits for a background scan to finish, by reading its report. */
+async function waitForReport(reportId: string): Promise<Settled> {
+  const until = Date.now() + POLL_FOR_MS;
+  while (Date.now() < until) {
+    await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+    try {
+      const res = await fetch(`/api/reports/${reportId}`, { cache: "no-store" });
+      if (!res.ok) continue;
+      const data = (await res.json()) as { ok: boolean; report?: { state: string; analysisMode: string; errorCode: ApiErrorCode | null; errorMessage: string | null } };
+      const report = data.report;
+      if (!report || report.state === "running") continue;
+      if (report.state === "complete") return { ok: true, demo: report.analysisMode === "demo" };
+      return { ok: false, code: report.errorCode ?? "ANALYSIS_FAILED", message: report.errorMessage ?? "The scan did not finish." };
+    } catch {
+      // A dropped poll is retried; the scan carries on on the server.
+    }
+  }
+  return { ok: "pending" };
+}
 
 const BILLING_CODES: ReadonlySet<ApiErrorCode> = new Set([
   "NO_ACTIVE_PLAN",
@@ -55,6 +81,8 @@ export function CheckerPanel({
     limit: number;
     remaining: number;
     resetsOn: string;
+    /** Content pages one scan reads on this plan. */
+    pagesPerScan?: number;
   } | null;
   checks: number;
   blocked?: { code: ApiErrorCode; message: string } | null;
@@ -96,7 +124,19 @@ export function CheckerPanel({
           body: JSON.stringify({ url: domain }),
         });
 
-        const data = (await res.json()) as Success | Failure;
+        const first = (await res.json()) as Success | Failure;
+        // The scan runs in the background; wait for its report.
+        let data: Success | Failure = first;
+        if (first.ok && first.queued) {
+          const settled = await waitForReport(first.reportId);
+          if (settled.ok === "pending") {
+            // Still going after several minutes: hand over to the report
+            // page, which keeps checking on it.
+            router.push(`/dashboard/reports/${first.reportId}`);
+            return;
+          }
+          data = settled.ok ? { ...first, demo: settled.demo } : settled;
+        }
 
         if (!data.ok) {
           stage.fail();
@@ -141,7 +181,7 @@ export function CheckerPanel({
           ok: false,
           code: "SERVER_ERROR",
           message:
-            "We lost the connection while the scan was running. Your scan allowance was not counted — try again.",
+            "We lost the connection while starting the scan. If it started, it will appear under Reports; otherwise nothing was counted — try again.",
         });
       }
     },
@@ -197,7 +237,15 @@ export function CheckerPanel({
                   <span className="t-data text-cloud-200">
                     {usage.used} / {usage.limit}
                   </span>{" "}
-                  scans used this month.
+                  scans used this month
+                  {usage.pagesPerScan ? (
+                    <>
+                      {" "}
+                      · up to <span className="t-data text-cloud-200">{usage.pagesPerScan}</span>{" "}
+                      {usage.pagesPerScan === 1 ? "page" : "pages"} per scan
+                    </>
+                  ) : null}
+                  .
                 </>
               ) : null}
             </p>

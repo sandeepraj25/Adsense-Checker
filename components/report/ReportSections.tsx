@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/Badge";
 
 import { cn } from "@/lib/cn";
 
-import { cheapestPlanWith } from "@/lib/plan-catalogue";
+import { cheapestPlanWith, listActivePlans } from "@/lib/plan-catalogue";
 
 import { FEATURE_META, type FeatureKey } from "@/lib/plans";
 
@@ -1000,7 +1000,8 @@ export function LockedFeatures({ locked }: { locked: FeatureKey[] }) {
                 </span>
 
                 <h3 className="text-base font-bold tracking-tight text-slate-950 sm:text-xl">
-                  {group.features.length} checks did not run on this plan
+                  Available on {group.planName} · {group.features.length}{" "}
+                  {group.features.length === 1 ? "check" : "checks"} didn&apos;t run in this scan
                 </h3>
               </div>
 
@@ -1053,6 +1054,7 @@ export function LockedFeatures({ locked }: { locked: FeatureKey[] }) {
                       <h4 className="max-w-[190px] text-sm font-bold leading-snug text-slate-950">
                         {meta.label}
                       </h4>
+                      <p className="mt-1 text-xs text-slate-600">Available on {group.planName}</p>
                     </article>
                   );
                 })}
@@ -1141,6 +1143,36 @@ function UpgradeCard({
       >
         Upgrade to {planName}
         <ArrowRight size={18} aria-hidden="true" />
+      </Link>
+    </div>
+  );
+}
+
+/**
+ * The one honest "more found" number a smaller plan can show: content
+ * pages the scan saw linked but did not read (its page allowance ran out).
+ * It comes from links already read, so no locked check runs to produce it.
+ * Shown only when some active plan reads more pages per scan.
+ */
+export function UnreadPagesTeaser({ unread, pageLimit }: { unread: number | undefined; pageLimit: number | null }) {
+  if (!unread || unread < 1 || !pageLimit) return null;
+  const bigger = listActivePlans()
+    .filter((plan) => plan.pagesPerScan > pageLimit)
+    .sort((a, b) => a.amountPaise - b.amountPaise)[0];
+  if (!bigger) return null;
+  return (
+    <div className="no-print glass flex flex-col gap-3 rounded-xl border border-azure-400/20 bg-azure-400/[0.04] p-4 sm:flex-row sm:items-center sm:justify-between">
+      <p className="text-[0.9375rem] leading-snug text-cloud-200">
+        We found at least <span className="t-data font-semibold text-cloud-50">{unread}</span> more{" "}
+        {unread === 1 ? "page" : "pages"} on your site that this scan didn&apos;t read — it reads up to {pageLimit}{" "}
+        {pageLimit === 1 ? "page" : "pages"}. {bigger.name} reads up to {bigger.pagesPerScan} per scan.
+      </p>
+      <Link
+        href="/pricing"
+        className="inline-flex shrink-0 items-center gap-1.5 text-[0.875rem] font-semibold text-azure-600 hover:underline"
+      >
+        See {bigger.name}
+        <ArrowRight size={16} aria-hidden="true" />
       </Link>
     </div>
   );

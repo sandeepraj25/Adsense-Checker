@@ -82,7 +82,7 @@ export function Tracker() {
       role="dialog"
       aria-live="polite"
       aria-label="Analytics choices"
-      className="fixed bottom-4 left-4 z-[60] w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-ink-700 bg-white p-4 text-[0.875rem] leading-relaxed text-cloud-200 shadow-[0_8px_30px_rgba(24,24,27,0.12)]"
+      className="no-print fixed bottom-4 left-4 z-[60] w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-ink-700 bg-white p-4 text-[0.875rem] leading-relaxed text-cloud-200 shadow-[0_8px_30px_rgba(24,24,27,0.12)]"
     >
       {banner === "ask" ? (
         <>

@@ -12,6 +12,7 @@ import { spawn } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 
 import { registerVerified, startMailSink } from "./lib/mail-sink.mjs";
+import { isolatedServerEnv } from "./lib/server-env.mjs";
 
 const SECRET = "test-auth-secret-that-is-long-enough-to-be-safe-12345";
 const dataDir = await mkdtemp(path.join(tmpdir(), "aec-otp-"));
@@ -29,7 +30,7 @@ let serverLog = "";
 function startServer(p, extraEnv) {
   const child = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "-p", String(p)], {
     cwd: process.cwd(),
-    env: {
+    env: isolatedServerEnv({
       ...process.env,
       NODE_ENV: "production",
       DATA_DIR: dataDir,
@@ -37,7 +38,7 @@ function startServer(p, extraEnv) {
       ADMIN_EMAIL: admin.email,
       ADMIN_PASSWORD: admin.password,
       ...extraEnv,
-    },
+    }),
     stdio: ["ignore", "pipe", "pipe"],
   });
   // Everything the server prints is kept, to prove no code ever reaches it.

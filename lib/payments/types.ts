@@ -55,6 +55,8 @@ export type OrderRequest = {
   receipt: string;
   planId: string;
   planName: string;
+  /** Monthly or yearly — for the order description only; the amount is already set. */
+  billingCycle?: "monthly" | "yearly";
   userId: string;
   customerName: string;
   customerEmail: string;

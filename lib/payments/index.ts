@@ -23,7 +23,10 @@ import { APP_URL, APP_URL_CONFIGURED, IS_PROD, PAYMENTS_MOCK_MODE } from "@/lib/
 import { requestOrigin } from "@/lib/request-origin";
 import type { ApiErrorCode } from "@/lib/http";
 import { fulfilPayment, DuplicateFulfilment } from "@/lib/billing/fulfil";
-import { planPrice, type Plan } from "@/lib/plans";
+import { type Plan } from "@/lib/plans";
+import { isBillingCycle, type BillingCycle } from "@/lib/billing/cycle";
+import { cyclePrice } from "@/lib/billing/offer";
+import { yearlyBillingEnabled } from "@/lib/billing/yearly-settings";
 import { CURRENCY_META, isCurrency, type Currency } from "@/lib/money";
 
 import { markCheckoutPaid } from "@/lib/alerts/checkout";
@@ -234,6 +237,11 @@ export type StartCheckoutInput = {
    * the first request's order back instead of opening another one.
    */
   idempotencyKey?: string;
+  /**
+   * Monthly or yearly. Like the currency, it only picks *which* configured
+   * price applies — the amount is read here. Absent means monthly.
+   */
+  billingCycle?: BillingCycle;
 };
 
 export type StartCheckoutResult =
@@ -245,6 +253,7 @@ export type StartCheckoutResult =
       currency: string;
       planId: string;
       planName: string;
+      billingCycle: BillingCycle;
       simulated: boolean;
       handoff: OrderResult["handoff"];
       /** True when this answers a repeat of an attempt already opened. */
@@ -259,6 +268,7 @@ function replayAttempt(
   plan: Plan,
   gateway: GatewayId,
   currency: Currency,
+  cycle: BillingCycle,
 ): StartCheckoutResult | null {
   const found = findPaymentByAttempt(userId, key);
   if (!found) return null;
@@ -269,6 +279,7 @@ function replayAttempt(
     payment.planId === plan.id &&
     payment.gateway === gateway &&
     payment.currency === currency &&
+    payment.billingCycle === cycle &&
     handoff &&
     typeof handoff === "object"
   ) {
@@ -281,6 +292,7 @@ function replayAttempt(
       currency: payment.currency,
       planId: payment.planId,
       planName: plan.name,
+      billingCycle: payment.billingCycle,
       simulated: payment.mode === "mock",
       handoff: handoff as OrderResult["handoff"],
       replayed: true,
@@ -313,14 +325,25 @@ export async function startCheckout(
     return { ok: false, code: "CURRENCY_UNSUPPORTED", message: "Choose INR or USD." };
   }
 
+  const cycle: BillingCycle | null =
+    input.billingCycle === undefined ? "monthly" : isBillingCycle(input.billingCycle) ? input.billingCycle : null;
+  if (!cycle) {
+    return { ok: false, code: "VALIDATION_ERROR", message: "Choose monthly or yearly billing." };
+  }
+
   // The amount for this purchase, from the plan record, in the chosen
-  // currency's minor units. Nothing from the request can change it.
-  const amount = planPrice(plan, currency);
+  // currency's minor units and for the chosen cycle. Nothing from the
+  // request can change it; a yearly order needs a configured yearly price
+  // and yearly billing switched on.
+  const amount = cyclePrice(plan, currency, cycle, yearlyBillingEnabled());
   if (amount === null) {
     return {
       ok: false,
       code: "PRICE_NOT_CONFIGURED",
-      message: `The ${plan.name} plan isn't offered in ${currency} yet. Choose another currency.`,
+      message:
+        cycle === "yearly"
+          ? `The ${plan.name} plan isn't offered yearly in ${currency}. Choose monthly billing.`
+          : `The ${plan.name} plan isn't offered in ${currency} yet. Choose another currency.`,
     };
   }
   if (amount <= 0) {
@@ -368,7 +391,7 @@ export async function startCheckout(
   const customerPhone = input.billing?.phone ?? input.customerPhone?.trim();
 
   if (input.idempotencyKey) {
-    const replay = replayAttempt(input.userId, input.idempotencyKey, plan, input.gateway, currency);
+    const replay = replayAttempt(input.userId, input.idempotencyKey, plan, input.gateway, currency, cycle);
     if (replay) return replay;
   }
 
@@ -387,6 +410,7 @@ export async function startCheckout(
     receipt,
     planId: plan.id,
     planName: plan.name,
+    billingCycle: cycle,
     userId: input.userId,
     customerName,
     customerEmail,
@@ -449,12 +473,13 @@ export async function startCheckout(
       billing: input.billing ?? null,
       idempotencyKey: input.idempotencyKey ?? null,
       handoff: order.handoff,
+      billingCycle: cycle,
     });
   } catch (error) {
     // A concurrent duplicate won the insert. Its order stands; the one
     // this request opened at the gateway is simply never paid and lapses.
     if (error instanceof DuplicateCheckoutAttempt && input.idempotencyKey) {
-      const replay = replayAttempt(input.userId, input.idempotencyKey, plan, input.gateway, currency);
+      const replay = replayAttempt(input.userId, input.idempotencyKey, plan, input.gateway, currency, cycle);
       if (replay) return replay;
     }
     throw error;
@@ -468,6 +493,7 @@ export async function startCheckout(
     currency,
     planId: plan.id,
     planName: plan.name,
+    billingCycle: cycle,
     simulated: option.simulated,
     handoff: order.handoff,
   };

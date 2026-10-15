@@ -156,19 +156,34 @@ export function registrable(hostname: string): string {
   return hostname.toLowerCase().replace(/^www\./, "");
 }
 
+/**
+ * Hard-coded widths wide enough to overflow a phone.
+ *
+ * Not counted, because they don't cause overflow:
+ *   - `width=` on images, video, svg and canvas — that is the intrinsic
+ *     size the browser reserves (recommended, to avoid layout shift), and
+ *     themes scale them with max-width: 100%;
+ *   - `max-width: Npx` — a ceiling, which is the fix rather than the problem.
+ */
+const MEDIA_TAGS = new Set(["img", "video", "picture", "source", "svg", "canvas", "image"]);
+
 function widthsOver(html: string, threshold: number): number[] {
   const found = new Set<number>();
-  const patterns = [
-    /width\s*=\s*["']?(\d{3,5})(?:px)?["']?/gi,
-    /(?:min-)?width\s*:\s*(\d{3,5})px/gi,
-  ];
-  for (const pattern of patterns) {
-    let match: RegExpExecArray | null;
-    while ((match = pattern.exec(html)) !== null) {
-      const value = Number(match[1]);
-      if (Number.isFinite(value) && value > threshold) found.add(value);
-    }
+  const add = (raw: string | undefined) => {
+    const value = Number(raw);
+    if (Number.isFinite(value) && value > threshold) found.add(value);
+  };
+
+  const attribute = /<([a-z][a-z0-9-]*)\b[^>]*?\swidth\s*=\s*["']?(\d{3,5})(?:px)?["']?/gi;
+  let match: RegExpExecArray | null;
+  while ((match = attribute.exec(html)) !== null) {
+    if (!MEDIA_TAGS.has((match[1] ?? "").toLowerCase())) add(match[2]);
   }
+
+  // `width:` or `min-width:`, but not `max-width:` (nor any other `-width`).
+  const style = /(?<![\w-])(?:min-)?width\s*:\s*(\d{3,5})px/gi;
+  while ((match = style.exec(html)) !== null) add(match[1]);
+
   return [...found].sort((a, b) => b - a).slice(0, 6);
 }
 

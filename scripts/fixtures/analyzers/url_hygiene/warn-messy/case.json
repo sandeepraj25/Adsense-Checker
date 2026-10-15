@@ -1,0 +1,4 @@
+{
+  "expect": "warn",
+  "summaryMatch": "session ID"
+}

@@ -635,5 +635,288 @@ CREATE INDEX IF NOT EXISTS idx_subs_created       ON subscriptions(created_at);
 CREATE INDEX IF NOT EXISTS idx_checkout_created   ON checkout_sessions(created_at);
 `;
 
+/**
+ * V10 — analyzer details on report lines.
+ *
+ * One nullable JSON column: the analyzer's own category, each individual
+ * finding (message, evidence, page) and its score/confidence. Existing
+ * rows keep NULL and render exactly as before.
+ */
+const V10 = `
+ALTER TABLE report_issues ADD COLUMN details_json TEXT;
+`;
+
+/**
+ * V11 — WHOIS lookups, cached.
+ *
+ * The domain-age analyzer asks registry WHOIS servers over port 43. Each
+ * answer (or failure) is kept so the same domain is not queried on every
+ * scan: successes for 30 days, failures for one day. Only the facts used
+ * are stored — never the raw WHOIS record, which can contain registrant
+ * contact details.
+ */
+const V11 = `
+CREATE TABLE IF NOT EXISTS whois_cache (
+  domain      TEXT PRIMARY KEY,
+  server      TEXT,
+  created_on  INTEGER,
+  status      TEXT NOT NULL CHECK (status IN ('found', 'no_date', 'not_found', 'unsupported', 'error')),
+  detail      TEXT,
+  fetched_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_whois_cache_fetched ON whois_cache(fetched_at);
+`;
+
+/**
+ * V12 — the self-learning approval model (lib/ml).
+ *
+ *   scan_features      one row per completed live scan: the numeric
+ *                      feature vector (no page text, no personal data),
+ *                      the estimate shown at the time, and — once the
+ *                      owner tells us — the AdSense outcome. `report_id`
+ *                      is UNIQUE, so a retried completion cannot add a
+ *                      second training example. It is not a foreign key:
+ *                      deleting a report keeps the anonymous numbers, while
+ *                      deleting the account removes them (user_id cascades).
+ *   feedback_requests  "Did AdSense approve your site?" — one open prompt
+ *                      per account and site, due 14 days after the scan,
+ *                      with its single email's delivery state.
+ *   ml_feedback        every answer ever submitted and what was done with
+ *                      it (accepted, deferred, duplicate, refused), with
+ *                      the reason — nothing is discarded silently.
+ *   model_versions     every trained model: algorithm, normalisation,
+ *                      weights, dataset snapshot, metrics and status.
+ *   ml_events          training runs, promotions, rollbacks and failures.
+ *
+ * New tables only; nothing existing is altered.
+ */
+const V12 = `
+CREATE TABLE IF NOT EXISTS scan_features (
+  id                TEXT PRIMARY KEY,
+  report_id         TEXT NOT NULL UNIQUE,
+  user_id           TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  domain            TEXT NOT NULL,
+  plan_id           TEXT NOT NULL,
+  analysis_mode     TEXT NOT NULL DEFAULT 'live',
+  feature_schema    TEXT NOT NULL,
+  feature_count     INTEGER NOT NULL,
+  vector_json       TEXT NOT NULL,
+  model_version     TEXT,
+  estimate_json     TEXT,
+  label             TEXT CHECK (label IS NULL OR label IN ('approved', 'rejected')),
+  rejection_reason  TEXT,
+  label_source      TEXT,
+  label_status      TEXT NOT NULL DEFAULT 'none' CHECK (label_status IN ('none', 'accepted', 'deferred', 'superseded', 'excluded')),
+  label_weight      REAL NOT NULL DEFAULT 1,
+  weight_note       TEXT,
+  labeled_at        INTEGER,
+  created_at        INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_scan_features_user_domain ON scan_features(user_id, domain, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_scan_features_label ON scan_features(label_status, label);
+CREATE INDEX IF NOT EXISTS idx_scan_features_domain ON scan_features(domain);
+
+CREATE TABLE IF NOT EXISTS feedback_requests (
+  id               TEXT PRIMARY KEY,
+  user_id          TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  domain           TEXT NOT NULL,
+  report_id        TEXT NOT NULL,
+  state            TEXT NOT NULL DEFAULT 'open' CHECK (state IN ('open', 'answered', 'closed')),
+  due_at           INTEGER NOT NULL,
+  ask_count        INTEGER NOT NULL DEFAULT 1,
+  email_status     TEXT NOT NULL DEFAULT 'waiting' CHECK (email_status IN ('waiting', 'sending', 'sent', 'retry', 'failed', 'skipped')),
+  email_attempts   INTEGER NOT NULL DEFAULT 0,
+  email_next_at    INTEGER,
+  email_locked_until INTEGER,
+  email_error      TEXT,
+  email_sent_at    INTEGER,
+  answered_at      INTEGER,
+  created_at       INTEGER NOT NULL,
+  updated_at       INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_requests_open ON feedback_requests(user_id, domain) WHERE state = 'open';
+CREATE INDEX IF NOT EXISTS idx_feedback_requests_due ON feedback_requests(state, due_at);
+CREATE INDEX IF NOT EXISTS idx_feedback_requests_email ON feedback_requests(email_status, email_next_at);
+
+CREATE TABLE IF NOT EXISTS ml_feedback (
+  id                TEXT PRIMARY KEY,
+  user_id           TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  domain            TEXT NOT NULL,
+  request_id        TEXT,
+  scan_features_id  TEXT,
+  outcome           TEXT NOT NULL CHECK (outcome IN ('approved', 'rejected', 'not_applied')),
+  rejection_reason  TEXT,
+  status            TEXT NOT NULL CHECK (status IN ('accepted', 'deferred', 'recorded', 'duplicate', 'refused', 'superseded')),
+  status_reason     TEXT NOT NULL,
+  source            TEXT NOT NULL DEFAULT 'dashboard',
+  created_at        INTEGER NOT NULL,
+  decided_at        INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ml_feedback_user_domain ON ml_feedback(user_id, domain, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ml_feedback_status ON ml_feedback(status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS model_versions (
+  id                 TEXT PRIMARY KEY,
+  version            TEXT NOT NULL UNIQUE,
+  algorithm          TEXT NOT NULL,
+  feature_schema     TEXT NOT NULL,
+  status             TEXT NOT NULL CHECK (status IN ('candidate', 'active', 'rejected', 'retired')),
+  model_json         TEXT NOT NULL,
+  reason_model_json  TEXT,
+  dataset_snapshot   TEXT NOT NULL,
+  train_count        INTEGER NOT NULL,
+  validation_count   INTEGER NOT NULL,
+  metrics_json       TEXT NOT NULL,
+  decision           TEXT,
+  trained_at         INTEGER NOT NULL,
+  activated_at       INTEGER,
+  retired_at         INTEGER
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_model_versions_active ON model_versions(status) WHERE status = 'active';
+CREATE INDEX IF NOT EXISTS idx_model_versions_trained ON model_versions(trained_at DESC);
+
+CREATE TABLE IF NOT EXISTS ml_events (
+  id                TEXT PRIMARY KEY,
+  model_version_id  TEXT,
+  event             TEXT NOT NULL CHECK (event IN ('trained', 'promoted', 'not_promoted', 'skipped', 'failed', 'rolled_back')),
+  trigger           TEXT NOT NULL,
+  actor             TEXT,
+  detail            TEXT NOT NULL,
+  created_at        INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ml_events_time ON ml_events(created_at DESC);
+`;
+
+/**
+ * V13 — smart insights (features 48–53).
+ *
+ *   scan_features.niche  the site's broad subject when the scan ran, so a
+ *                        site is only compared with sites like it. NULL
+ *                        for rows stored before this version.
+ *   scan_schedules       weekly rescans: one row per account and site
+ *                        (UNIQUE, so a schedule cannot be duplicated),
+ *                        claimed with a lock before each run so two
+ *                        workers never run it twice, and kept in the
+ *                        database so a restart loses nothing.
+ *   schedule_runs        every scheduled attempt — complete, failed,
+ *                        skipped, paused — with its reason and the
+ *                        change-alert email's delivery state.
+ *
+ * One added nullable column and new tables; nothing existing is altered.
+ */
+const V13 = `
+ALTER TABLE scan_features ADD COLUMN niche TEXT;
+CREATE INDEX IF NOT EXISTS idx_scan_features_niche ON scan_features(niche, feature_schema, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS scan_schedules (
+  id               TEXT PRIMARY KEY,
+  user_id          TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  domain           TEXT NOT NULL,
+  enabled          INTEGER NOT NULL DEFAULT 1,
+  state            TEXT NOT NULL DEFAULT 'active' CHECK (state IN ('active', 'paused', 'disabled')),
+  state_reason     TEXT,
+  next_run_at      INTEGER NOT NULL,
+  attempt          INTEGER NOT NULL DEFAULT 0,
+  failed_weeks     INTEGER NOT NULL DEFAULT 0,
+  locked_until     INTEGER,
+  last_run_at      INTEGER,
+  last_report_id   TEXT,
+  last_outcome     TEXT,
+  paused_since     INTEGER,
+  created_at       INTEGER NOT NULL,
+  updated_at       INTEGER NOT NULL,
+  UNIQUE (user_id, domain)
+);
+CREATE INDEX IF NOT EXISTS idx_scan_schedules_due ON scan_schedules(enabled, next_run_at);
+
+CREATE TABLE IF NOT EXISTS schedule_runs (
+  id              TEXT PRIMARY KEY,
+  schedule_id     TEXT NOT NULL REFERENCES scan_schedules(id) ON DELETE CASCADE,
+  user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  domain          TEXT NOT NULL,
+  report_id       TEXT,
+  outcome         TEXT NOT NULL CHECK (outcome IN ('complete', 'failed', 'skipped', 'paused', 'disabled')),
+  detail          TEXT NOT NULL,
+  changes_json    TEXT,
+  email_status    TEXT NOT NULL DEFAULT 'none' CHECK (email_status IN ('none', 'pending', 'sending', 'sent', 'retry', 'failed', 'skipped')),
+  email_attempts  INTEGER NOT NULL DEFAULT 0,
+  email_next_at   INTEGER,
+  email_locked_until INTEGER,
+  email_error     TEXT,
+  created_at      INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_schedule_runs_schedule ON schedule_runs(schedule_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_schedule_runs_email ON schedule_runs(email_status, email_next_at);
+`;
+
+/**
+ * V14 — monthly and yearly billing.
+ *
+ *   plans          an optional yearly price per currency (NULL = not
+ *                  offered yearly), a per-plan yearly switch (off) and an
+ *                  optional badge ("2 months free"). Existing rows stay
+ *                  monthly-only until an admin sets a yearly price.
+ *   subscriptions  billing_cycle ('monthly' for every existing row);
+ *                  calendar_billing = 1 for purchases from this version on,
+ *                  whose periods and monthly allowance resets follow
+ *                  calendar months — existing rows keep their 30-day
+ *                  cycles exactly as sold; next_billing_cycle holds a
+ *                  switch the customer scheduled for their next renewal.
+ *   payments,      the cycle that was paid for, so fulfilment grants
+ *   invoices,      exactly what was bought and the invoice says so.
+ *   checkout_sessions
+ *
+ * Added columns with defaults only; nothing existing is altered.
+ */
+const V14 = `
+ALTER TABLE plans ADD COLUMN yearly_amount_paise INTEGER;
+ALTER TABLE plans ADD COLUMN yearly_usd_cents INTEGER;
+ALTER TABLE plans ADD COLUMN yearly_enabled INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE plans ADD COLUMN yearly_badge TEXT;
+
+ALTER TABLE subscriptions ADD COLUMN billing_cycle TEXT NOT NULL DEFAULT 'monthly' CHECK (billing_cycle IN ('monthly', 'yearly'));
+ALTER TABLE subscriptions ADD COLUMN calendar_billing INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE subscriptions ADD COLUMN next_billing_cycle TEXT CHECK (next_billing_cycle IS NULL OR next_billing_cycle IN ('monthly', 'yearly'));
+ALTER TABLE subscriptions ADD COLUMN next_cycle_set_at INTEGER;
+
+ALTER TABLE payments ADD COLUMN billing_cycle TEXT NOT NULL DEFAULT 'monthly' CHECK (billing_cycle IN ('monthly', 'yearly'));
+ALTER TABLE invoices ADD COLUMN billing_cycle TEXT NOT NULL DEFAULT 'monthly';
+ALTER TABLE checkout_sessions ADD COLUMN billing_cycle TEXT NOT NULL DEFAULT 'monthly';
+`;
+
+/**
+ * V15 — admin-configurable usage limits and background scans.
+ *
+ *   plans.pages_per_scan          content pages one scan may read. Seeded
+ *                                 here once with the suggested defaults
+ *                                 (Free 1, Basic 25, Pro 200), only where
+ *                                 it is unset; an admin edits it after.
+ *                                 Scans per month is the existing
+ *                                 scan_limit and keeps its current value.
+ *   subscriptions.page_limit      the plan's page allowance, snapshotted
+ *                                 like scan_limit and refreshed at each
+ *                                 monthly reset. NULL on older rows: the
+ *                                 plan's current value applies.
+ *   reports.error_code            why a background scan failed, for the
+ *                                 page that is waiting on it.
+ *   reports.heartbeat_at          a running scan's last sign of life; a
+ *                                 run that stops beating (a restart) is
+ *                                 failed and refunded.
+ *   reports.page_limit            the page allowance the scan ran with.
+ *
+ * Added columns only; nothing existing is altered.
+ */
+const V15 = `
+ALTER TABLE plans ADD COLUMN pages_per_scan INTEGER;
+UPDATE plans SET pages_per_scan = 1   WHERE id = 'free'  AND pages_per_scan IS NULL;
+UPDATE plans SET pages_per_scan = 25  WHERE id = 'basic' AND pages_per_scan IS NULL;
+UPDATE plans SET pages_per_scan = 200 WHERE id = 'pro'   AND pages_per_scan IS NULL;
+ALTER TABLE subscriptions ADD COLUMN page_limit INTEGER;
+ALTER TABLE reports ADD COLUMN error_code TEXT;
+ALTER TABLE reports ADD COLUMN heartbeat_at INTEGER;
+ALTER TABLE reports ADD COLUMN page_limit INTEGER;
+CREATE INDEX IF NOT EXISTS idx_reports_running ON reports(state, heartbeat_at);
+`;
+
 /** Append-only. Index 0 is version 1. */
-export const MIGRATIONS: string[] = [V1, V2, V3, V4, V5, V6, V7, V8, V9];
+export const MIGRATIONS: string[] = [V1, V2, V3, V4, V5, V6, V7, V8, V9, V10, V11, V12, V13, V14, V15];

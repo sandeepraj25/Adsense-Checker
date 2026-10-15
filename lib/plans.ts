@@ -33,7 +33,17 @@ export type BillingInterval = "month";
 
 /* ── the feature vocabulary ──────────────────────────────────────── */
 
-export const FEATURE_KEYS = [
+import {
+  ANALYZER_CATALOG,
+  type AnalyzerCatalogEntry,
+  type AnalyzerKey,
+} from "@/lib/analysis/analyzers/catalog";
+
+/** The catalogue read through its element type (it may be empty). */
+const CATALOG: readonly AnalyzerCatalogEntry[] = ANALYZER_CATALOG;
+
+/** The original nineteen features. Their keys and meaning never change. */
+export const CORE_FEATURE_KEYS = [
   "basic_page_check",
   "https_check",
   "advanced_page_check",
@@ -55,7 +65,18 @@ export const FEATURE_KEYS = [
   "pdf_export",
 ] as const;
 
-export type FeatureKey = (typeof FEATURE_KEYS)[number];
+export type CoreFeatureKey = (typeof CORE_FEATURE_KEYS)[number];
+
+/**
+ * Every feature an administrator can assign to a plan: the core set, then
+ * each analyzer in the catalogue (lib/analysis/analyzers/catalog.ts).
+ */
+export type FeatureKey = CoreFeatureKey | AnalyzerKey;
+
+export const FEATURE_KEYS: readonly FeatureKey[] = [
+  ...CORE_FEATURE_KEYS,
+  ...CATALOG.map((entry) => entry.key as AnalyzerKey),
+];
 
 export function isFeatureKey(value: unknown): value is FeatureKey {
   return typeof value === "string" && (FEATURE_KEYS as readonly string[]).includes(value);
@@ -68,8 +89,8 @@ export function isFeatureKey(value: unknown): value is FeatureKey {
  * is locked. It has to describe real work, so if you add a key here you
  * are promising to implement it.
  */
-export const FEATURE_META: Record<
-  FeatureKey,
+const CORE_FEATURE_META: Record<
+  CoreFeatureKey,
   { label: string; does: string; minPlan: PlanId }
 > = {
   basic_page_check: {
@@ -169,9 +190,27 @@ export const FEATURE_META: Record<
   },
 };
 
+export const FEATURE_META: Record<
+  FeatureKey,
+  { label: string; does: string; minPlan: PlanId }
+> = {
+  ...CORE_FEATURE_META,
+  ...(Object.fromEntries(
+    CATALOG.map((entry) => [entry.key, { label: entry.label, does: entry.does, minPlan: entry.defaultPlan }]),
+  ) as Record<AnalyzerKey, { label: string; does: string; minPlan: PlanId }>),
+};
+
+/** Analyzer features whose default plan is exactly this one. */
+function analyzerDefaults(plan: PlanId): FeatureKey[] {
+  return CATALOG.filter((entry) => entry.defaultPlan === plan).map((entry) => entry.key as AnalyzerKey);
+}
+
 /* ── the plans ───────────────────────────────────────────────────── */
 
-const FREE_FEATURES: FeatureKey[] = ["basic_page_check", "https_check"];
+// Shipped defaults: what a fresh database starts with and what "Reset to
+// defaults" restores. A running install's plans are edited in Admin → Plans
+// and new analyzer keys reach them once through lib/db/feature-seeds.ts.
+const FREE_FEATURES: FeatureKey[] = ["basic_page_check", "https_check", ...analyzerDefaults("free")];
 
 const BASIC_FEATURES: FeatureKey[] = [
   ...FREE_FEATURES,
@@ -180,6 +219,7 @@ const BASIC_FEATURES: FeatureKey[] = [
   "originality_check",
   "duplicate_content_check",
   "adsense_policy_check",
+  ...analyzerDefaults("basic"),
 ];
 
 const PRO_FEATURES: FeatureKey[] = [
@@ -196,6 +236,7 @@ const PRO_FEATURES: FeatureKey[] = [
   "ai_recommendations",
   "priority_support",
   "pdf_export",
+  ...analyzerDefaults("pro"),
 ];
 
 export type Plan = {
@@ -211,11 +252,27 @@ export type Plan = {
    * in dollars. Never derived from the INR price — an admin sets it.
    */
   usdAmountCents: number | null;
+  /**
+   * Yearly prices (minor units) for twelve months paid up front, per
+   * currency; null = not offered yearly in that currency. Set by an admin
+   * on Admin → Pricing. Only offered when `yearlyEnabled` is on and the
+   * site-wide yearly switch is on (lib/billing/offer.ts).
+   */
+  yearlyAmountPaise: number | null;
+  yearlyUsdCents: number | null;
+  yearlyEnabled: boolean;
+  /** Optional badge for the yearly price, e.g. "2 months free". */
+  yearlyBadge: string | null;
   interval: BillingInterval;
   /** Distinct websites the account may hold at once. */
   siteLimit: number;
   /** Article scans granted per billing month. Resets on renewal. */
   scanLimit: number;
+  /**
+   * Content pages one scan may read (homepage included; the privacy,
+   * contact, about and terms pages are read in addition). Admin-editable.
+   */
+  pagesPerScan: number;
   /** Can this be bought? `free` is granted on signup, never sold. */
   purchasable: boolean;
   /** Renders the emphasised card. Exactly one should be true. */
@@ -243,14 +300,20 @@ export const PLANS: Record<PlanId, Plan> = {
     amountPaise: 0,
     currency: "INR",
     usdAmountCents: 0,
+    yearlyAmountPaise: null,
+    yearlyUsdCents: null,
+    yearlyEnabled: false,
+    yearlyBadge: null,
     interval: "month",
     siteLimit: 1,
     scanLimit: 10,
+    pagesPerScan: 1,
     purchasable: false,
     featured: false,
     active: true,
     features: FREE_FEATURES,
-    showcase: FREE_FEATURES,
+    // The card lists the core lines; analyzer features are grouped in the report.
+    showcase: ["basic_page_check", "https_check"],
     excluded: ["ai_content_check"],
     highlights: ["1 website", "10 article scans per month"],
   },
@@ -263,9 +326,14 @@ export const PLANS: Record<PlanId, Plan> = {
     currency: "INR",
     // Not offered in dollars until an admin sets a dollar price.
     usdAmountCents: null,
+    yearlyAmountPaise: null,
+    yearlyUsdCents: null,
+    yearlyEnabled: false,
+    yearlyBadge: null,
     interval: "month",
     siteLimit: 3,
     scanLimit: 100,
+    pagesPerScan: 25,
     purchasable: true,
     featured: true,
     active: true,
@@ -288,9 +356,14 @@ export const PLANS: Record<PlanId, Plan> = {
     amountPaise: 99900,
     currency: "INR",
     usdAmountCents: null,
+    yearlyAmountPaise: null,
+    yearlyUsdCents: null,
+    yearlyEnabled: false,
+    yearlyBadge: null,
     interval: "month",
     siteLimit: 8,
     scanLimit: 300,
+    pagesPerScan: 200,
     purchasable: true,
     featured: false,
     active: true,
@@ -338,6 +411,9 @@ export const PURCHASABLE_PLANS: Plan[] = PLAN_LIST.filter((plan) => plan.purchas
 
 /** The plan every new account starts on. */
 export const DEFAULT_PLAN_ID: PlanId = "free";
+
+/** Hard ceiling on pages per scan, whatever a plan says — a typo guard. */
+export const MAX_PAGES_PER_SCAN = 500;
 
 /** Days in a billing month. Every plan renews on this cadence. */
 export const BILLING_PERIOD_DAYS = 30;

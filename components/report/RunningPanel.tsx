@@ -14,7 +14,7 @@ import { Spinner } from "@/components/ui/Spinner";
  * stuck run settles into a manual reload instead of hammering the app.
  */
 const INTERVAL_MS = 4000;
-const MAX_POLLS = 45; // three minutes, matching the stale-run cutoff
+const MAX_POLLS = 90; // six minutes: the longest scans run about four
 
 export function RunningPanel() {
   const router = useRouter();
@@ -44,7 +44,7 @@ export function RunningPanel() {
           </p>
           <p className="mt-1 max-w-lg text-[0.875rem] leading-relaxed text-cloud-600">
             {watching
-              ? "The page is checking for the result every few seconds. A run that stalls for more than three minutes is marked failed automatically and the scan is returned to your monthly allowance."
+              ? "The page is checking for the result every few seconds. Scans of plans with many pages can take a few minutes. A run that stops responding is marked failed automatically and the scan is returned to your monthly allowance."
               : "It has probably failed. Reload once more — stalled runs are marked failed and the scan is returned to your monthly allowance."}
           </p>
         </div>

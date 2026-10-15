@@ -3,6 +3,7 @@ import type { Subscription, User } from "@/lib/db/types";
 import { cheapestPlanWith, getPlan, requirePlan } from "@/lib/plan-catalogue";
 import { FEATURE_META, type FeatureKey } from "@/lib/plans";
 import { sitePriceLabel } from "@/lib/site-currency";
+import { limitReachedMessage } from "@/lib/limits";
 
 /**
  * Why this account cannot do a thing right now, or null if it can.
@@ -74,8 +75,7 @@ export function entitlementBlock(
   if (subscription.scansRemaining < 1) {
     return {
       code: "LIMIT_REACHED",
-      message:
-        "Monthly scan limit reached. Upgrade your plan or wait until your next billing cycle.",
+      message: limitReachedMessage(subscription),
       action: { label: "Upgrade", href: "/pricing" },
     };
   }

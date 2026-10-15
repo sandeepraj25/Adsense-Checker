@@ -224,6 +224,7 @@ export default async function AdminSubscriptionsPage({
                   <Td>
                     <span className="font-medium text-cloud-100">
                       {row.planName}
+                      {row.billingCycle === "yearly" ? <span className="ml-1.5 text-[0.75rem] text-cloud-400">yearly</span> : null}
                     </span>
                   </Td>
 

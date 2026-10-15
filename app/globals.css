@@ -491,9 +491,40 @@
    affects the screen rendering of any page.
    ============================================================ */
 
+/* Long URLs and evidence wrap instead of overflowing their box. */
+.break-anywhere {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 @media print {
   @page {
     margin: 14mm;
+  }
+
+  /* A report whose plan has no PDF export prints a notice, not the report:
+     the same rule the Export button follows. */
+  .report-print-locked > * {
+    display: none !important;
+  }
+  .report-print-locked > .print-only-notice {
+    display: block !important;
+    padding: 24px;
+    border: 1px solid #d7dae6;
+    border-radius: 12px;
+  }
+
+  /* Everything wraps on paper: URLs, evidence, code-ish strings. */
+  .font-mono,
+  a,
+  td,
+  p {
+    overflow-wrap: anywhere;
+  }
+
+  /* Sticky and fixed chrome has no place on paper. */
+  .fixed {
+    display: none !important;
   }
 
   /* Chrome and Firefox */
@@ -564,10 +595,17 @@
     padding-left: 0 !important;
   }
 
-  /* Avoid splitting a finding across two sheets. */
+  /* Avoid splitting a finding or a small panel across two sheets; long
+     sections flow freely (holding a whole section together left pages
+     nearly empty), but a heading stays with what follows it. */
   article,
-  section,
+  li,
   .glass {
     break-inside: avoid;
+  }
+  h1,
+  h2,
+  h3 {
+    break-after: avoid;
   }
 }

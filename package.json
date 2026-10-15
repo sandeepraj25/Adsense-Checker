@@ -20,16 +20,34 @@
     "test:chat": "npm run build && node scripts/chat-test.mjs",
     "test:alerts": "npm run build && node scripts/alerts-test.mjs",
     "test:analytics": "npm run build && node scripts/analytics-test.mjs",
-    "test:homepage": "npm run build && node scripts/homepage-test.mjs"
+    "test:homepage": "npm run build && node scripts/homepage-test.mjs",
+    "test:smtp": "npm run build && node scripts/smtp-test.mjs",
+    "test:analysis": "node scripts/analysis-test.mjs",
+    "test:framework": "node scripts/analyzer-framework-test.mjs",
+    "test:analyzers": "node scripts/analyzers-unit-test.mjs",
+    "test:whois": "node --test scripts/whois-test.mjs",
+    "test:ml": "node --test --test-concurrency=1 scripts/ml-test.mjs",
+    "test:ml-http": "npm run build && node scripts/ml-http-test.mjs",
+    "test:insights": "node --test --test-concurrency=1 scripts/insights-test.mjs",
+    "test:insights-http": "npm run build && node scripts/insights-http-test.mjs",
+    "test:billing-cycle": "npm run build && node scripts/billing-cycle-test.mjs",
+    "test:limits": "npm run build && node scripts/limits-test.mjs",
+    "test:report": "npm run build && node scripts/report-test.mjs",
+    "test:phase7": "node scripts/phase7-test.mjs",
+    "test:all": "node scripts/test-all.mjs",
+    "test:scheduler": "npm run build && node scripts/scheduler-test.mjs",
+    "jobs:run": "node scripts/run-scheduled-jobs.mjs"
   },
   "dependencies": {
+    "cheerio": "1.2.0",
     "framer-motion": "^11.15.0",
     "libphonenumber-js": "1.13.12",
     "lucide-react": "^0.469.0",
-    "next": "15.1.6",
+    "next": "15.5.27",
+    "nodemailer": "10.0.10",
     "react": "19.0.0",
     "react-dom": "19.0.0",
-    "sharp": "^0.33.5"
+    "sharp": "^0.35.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.0.0",
@@ -38,6 +56,7 @@
     "@types/react-dom": "^19.0.3",
     "eslint": "9.39.5",
     "eslint-config-next": "16.4.0",
+    "playwright-core": "1.63.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.3"
   }

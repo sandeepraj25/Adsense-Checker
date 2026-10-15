@@ -5,7 +5,9 @@ import { accountBlock } from "@/lib/entitlement";
 import { jsonError, jsonOk, jsonServerError, readJson, str } from "@/lib/http";
 import { siteCurrency } from "@/lib/site-currency";
 import { getPlan } from "@/lib/plan-catalogue";
-import { planPrice } from "@/lib/plans";
+import type { BillingCycle } from "@/lib/billing/cycle";
+import { cyclePrice } from "@/lib/billing/offer";
+import { yearlyBillingEnabled } from "@/lib/billing/yearly-settings";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
 import { requestContext, trackServerEvent } from "@/lib/analytics/store";
 
@@ -42,7 +44,8 @@ export async function POST(request: Request) {
   }
   // Saved in the site currency; the browser's value is not used.
   const currency = siteCurrency();
-  const amount = planPrice(plan, currency);
+  const billingCycle: BillingCycle = body.billingCycle === "yearly" ? "yearly" : "monthly";
+  const amount = cyclePrice(plan, currency, billingCycle, yearlyBillingEnabled());
   if (amount === null || amount <= 0) {
     return jsonError("PRICE_NOT_CONFIGURED", "That plan can't be bought right now.");
   }
@@ -62,7 +65,7 @@ export async function POST(request: Request) {
     const session = saveCheckoutProgress({
       checkoutId: body.checkoutId,
       userId: user.id,
-      plan: { id: plan.id, name: plan.name },
+      plan: { id: plan.id, name: billingCycle === "yearly" ? `${plan.name} (yearly)` : plan.name },
       currency,
       amountMinor: amount,
       billing: billing.details,

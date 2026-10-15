@@ -15,6 +15,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import sharp from "sharp";
 import { registerVerified, startMailSink } from "./lib/mail-sink.mjs";
+import { isolatedServerEnv } from "./lib/server-env.mjs";
 
 const dataDir = await mkdtemp(path.join(tmpdir(), "aec-profile-"));
 const mail = await startMailSink();
@@ -32,7 +33,7 @@ function startServer() {
     ["node_modules/next/dist/bin/next", "start", "-p", String(port)],
     {
       cwd: process.cwd(),
-      env: {
+      env: isolatedServerEnv({
         ...process.env,
         DATA_DIR: dataDir,
         AUTH_SECRET: "test-auth-secret-that-is-long-enough-to-be-safe-12345",
@@ -40,7 +41,7 @@ function startServer() {
         ADMIN_PASSWORD: admin.password,
         ADMIN_NAME: "Site Admin",
         ...mail.env,
-      },
+      }),
       stdio: ["ignore", "ignore", "inherit"],
     },
   );

@@ -20,6 +20,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { isolatedServerEnv } from "./lib/server-env.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const workDir = mkdtempSync(path.join(tmpdir(), "aec-pricing-"));
@@ -71,7 +72,7 @@ function compileLib() {
   const nodeModules = path.join(outDir, "node_modules");
   mkdirSync(nodeModules, { recursive: true });
   symlinkSync(outDir, path.join(nodeModules, "@"), "dir");
-  for (const pkg of ["libphonenumber-js", "sharp"]) {
+  for (const pkg of ["libphonenumber-js", "sharp", "nodemailer", "cheerio"]) {
     try { symlinkSync(path.join(projectRoot, "node_modules", pkg), path.join(nodeModules, pkg), "dir"); } catch { /* optional */ }
   }
 }
@@ -367,7 +368,7 @@ const base = `http://127.0.0.1:${port}`;
 let serverLog = "";
 const server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "-p", String(port)], {
   cwd: projectRoot,
-  env: { ...process.env, ...SECRETS, NODE_ENV: "production", DATA_DIR: dataDir },
+  env: isolatedServerEnv({ ...process.env, ...SECRETS, NODE_ENV: "production", DATA_DIR: dataDir }),
   stdio: ["ignore", "pipe", "pipe"],
 });
 server.stdout.on("data", (d) => (serverLog += d));

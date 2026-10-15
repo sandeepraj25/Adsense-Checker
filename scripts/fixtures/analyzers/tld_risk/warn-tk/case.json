@@ -1,0 +1,5 @@
+{
+  "expect": "warn",
+  "origin": "https://free-recipes.tk",
+  "itemMatch": "\\.tk"
+}

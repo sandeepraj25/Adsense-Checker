@@ -121,7 +121,7 @@ export const cashfree: Gateway = {
           customer_phone: request.customerPhone,
         },
         order_meta: { return_url: `${request.returnUrl}?order_id={order_id}` },
-        order_note: `${request.planName} plan — monthly`,
+        order_note: `${request.planName} plan — ${request.billingCycle === "yearly" ? "yearly" : "monthly"}`,
       },
     });
 

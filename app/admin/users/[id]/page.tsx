@@ -152,7 +152,11 @@ export default async function AdminUserDetailPage({
         <Panel title="Live subscription">
           {live ? (
             <dl>
-              <DataRow label="Plan">{live.planName}</DataRow>
+              <DataRow label="Plan">
+                {live.planName}
+                {live.billingCycle === "yearly" ? " · billed yearly" : " · billed monthly"}
+                {live.nextBillingCycle ? ` (→ ${live.nextBillingCycle} at renewal)` : ""}
+              </DataRow>
               <DataRow label="Price paid" mono>
                 {live.amountPaise === 0 ? "Free" : formatMoney(live.amountPaise, live.currency)}
               </DataRow>

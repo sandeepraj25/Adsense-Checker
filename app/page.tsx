@@ -18,6 +18,7 @@ import { siteCurrency } from "@/lib/site-currency";
 import { checkoutOptions, checkoutOptionsFor } from "@/lib/payments";
 import { listActivePlans } from "@/lib/plan-catalogue";
 import { PLANS } from "@/lib/plans";
+import { yearlyBillingEnabled } from "@/lib/billing/yearly-settings";
 
 /**
  * The homepage, with the site's shared navigation bar and footer —
@@ -69,6 +70,7 @@ export default async function HomePage() {
             currency={currency}
             options={options}
             anyGateway={allOptions.length > 0}
+            yearlyOn={yearlyBillingEnabled()}
           />
           <HomeFaq paymentMethods={[...new Set(allOptions.map((option) => option.label))]} />
         </main>

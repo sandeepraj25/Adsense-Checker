@@ -61,16 +61,21 @@ export function setGraceMinutes(minutes: number, by: string): void {
   set(GRACE_MINUTES, String(minutes), by);
 }
 
-export function recordJobRun(summary: string, now = Date.now()): void {
-  set(LAST_RUN, JSON.stringify({ at: now, summary }), "job");
+export type JobRunTrigger = "scheduler" | "background" | "admin";
+
+export function recordJobRun(summary: string, now = Date.now(), trigger: JobRunTrigger = "admin"): void {
+  set(LAST_RUN, JSON.stringify({ at: now, summary, trigger }), "job");
 }
 
-export function lastJobRun(): { at: number; summary: string } | null {
+/** The last run from any source; `trigger` is absent on rows from before it was recorded. */
+export function lastJobRun(): { at: number; summary: string; trigger: JobRunTrigger | null } | null {
   const row = get(LAST_RUN);
   if (!row) return null;
   try {
-    const parsed = JSON.parse(row.value) as { at: number; summary: string };
-    return typeof parsed.at === "number" ? parsed : null;
+    const parsed = JSON.parse(row.value) as { at: number; summary: string; trigger?: string };
+    if (typeof parsed.at !== "number") return null;
+    const trigger = parsed.trigger === "scheduler" || parsed.trigger === "background" || parsed.trigger === "admin" ? parsed.trigger : null;
+    return { at: parsed.at, summary: parsed.summary, trigger };
   } catch {
     return null;
   }

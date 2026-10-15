@@ -5,6 +5,7 @@ import {
   toWebsite,
   type AnalysisMode,
   type CategoryScore,
+  type FindingAnalyzerDetail,
   type IssuePriority,
   type IssueStatus,
   type PageScore,
@@ -87,6 +88,8 @@ export function createRunningReport(input: {
   analysisMode: AnalysisMode;
   /** The features this run is entitled to, recorded before it starts. */
   features: FeatureKey[];
+  /** The pages-per-scan allowance it runs with. */
+  pageLimit?: number | null;
 }): Report {
   const now = Date.now();
   const row: ReportRow = {
@@ -119,6 +122,9 @@ export function createRunningReport(input: {
     metrics_json: "{}",
     checks_run: 0,
     locked_json: "[]",
+    error_code: null,
+    heartbeat_at: now,
+    page_limit: input.pageLimit ?? null,
   };
 
   run(
@@ -128,8 +134,8 @@ export function createRunningReport(input: {
         critical_count, plan_id, plan_name, engine_version, analysis_mode,
         pages_fetched, error_message, started_at, finished_at, duration_ms,
         created_at, features_json, pages_json, metrics_json, checks_run,
-        locked_json)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        locked_json, heartbeat_at, page_limit)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
       row.id,
       row.ref,
@@ -160,6 +166,8 @@ export function createRunningReport(input: {
       row.metrics_json,
       row.checks_run,
       row.locked_json,
+      row.heartbeat_at ?? now,
+      row.page_limit ?? null,
     ],
   );
 
@@ -177,6 +185,8 @@ export type NewIssue = {
   evidence?: string | null;
   /** The plan feature that produced this finding. */
   feature?: FeatureKey | null;
+  /** Analyzer lines only: their category, findings, score and confidence. */
+  analyzer?: FindingAnalyzerDetail | null;
 };
 
 /** Report body and its issues land together or not at all. */
@@ -195,10 +205,13 @@ export function completeReport(input: {
   pages: PageScore[];
   metrics: ReportMetrics;
   checksRun: number;
-}): void {
+}): boolean {
   const now = Date.now();
-  tx(() => {
-    run(
+  return tx(() => {
+    // Only a scan that is still running can complete. One the stale sweep
+    // has already failed (and refunded) stays failed, so a late finish can
+    // never turn a refunded scan into a free report.
+    const updated = run(
       `UPDATE reports
           SET state = 'complete',
               score = ?,
@@ -215,7 +228,7 @@ export function completeReport(input: {
               checks_run = ?,
               finished_at = ?,
               duration_ms = ? - started_at
-        WHERE id = ?`,
+        WHERE id = ? AND state = 'running'`,
       [
         Math.round(input.score),
         input.verdict,
@@ -234,6 +247,7 @@ export function completeReport(input: {
         input.reportId,
       ],
     );
+    if (updated.changes === 0) return false;
 
     run("DELETE FROM report_issues WHERE report_id = ?", [input.reportId]);
 
@@ -241,8 +255,8 @@ export function completeReport(input: {
       run(
         `INSERT INTO report_issues
            (id, report_id, check_id, category_id, label, status, priority,
-            detail, recommendation, evidence, sort_order, feature)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+            detail, recommendation, evidence, sort_order, feature, details_json)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [
           newId("iss"),
           input.reportId,
@@ -256,20 +270,55 @@ export function completeReport(input: {
           issue.evidence ?? null,
           index,
           issue.feature ?? null,
+          issue.analyzer ? JSON.stringify(issue.analyzer) : null,
         ],
       );
     });
+    return true;
   });
 }
 
-export function failReport(reportId: string, message: string): void {
+/** Fails a running scan. False when it had already finished or failed. */
+export function failReport(reportId: string, message: string, code: string | null = null): boolean {
   const now = Date.now();
-  run(
-    `UPDATE reports
-        SET state = 'failed', error_message = ?, finished_at = ?,
-            duration_ms = ? - started_at
-      WHERE id = ?`,
-    [message.slice(0, 500), now, now, reportId],
+  return (
+    run(
+      `UPDATE reports
+          SET state = 'failed', error_message = ?, error_code = ?, finished_at = ?,
+              duration_ms = ? - started_at
+        WHERE id = ? AND state = 'running'`,
+      [message.slice(0, 500), code, now, now, reportId],
+    ).changes > 0
+  );
+}
+
+/**
+ * Fails a running scan and gives its scan back, in one step — once: a scan
+ * the stale sweep already failed and refunded is not refunded again.
+ */
+export function failAndRefund(reportId: string, subscriptionId: string | null, message: string, code: string | null): boolean {
+  return tx(() => {
+    if (!failReport(reportId, message, code)) return false;
+    if (subscriptionId) {
+      run("UPDATE subscriptions SET scans_used = MAX(0, scans_used - 1), updated_at = ? WHERE id = ?", [Date.now(), subscriptionId]);
+    }
+    return true;
+  });
+}
+
+/** A running background scan's sign of life (lib/scans/jobs.ts). */
+export function heartbeatReports(ids: readonly string[], now = Date.now()): void {
+  for (const id of ids) run("UPDATE reports SET heartbeat_at = ? WHERE id = ? AND state = 'running'", [now, id]);
+}
+
+export function countRunningReports(userId: string, domain?: string): number {
+  return (
+    one<{ n: number }>(
+      domain
+        ? "SELECT COUNT(*) AS n FROM reports WHERE user_id = ? AND domain = ? AND state = 'running'"
+        : "SELECT COUNT(*) AS n FROM reports WHERE user_id = ? AND state = 'running'",
+      domain ? [userId, domain] : [userId],
+    )?.n ?? 0
   );
 }
 
@@ -359,9 +408,13 @@ export function setReportAnalysisMode(reportId: string, mode: AnalysisMode): voi
  * within one transaction, so the count used for the credit and the rows
  * marked failed are guaranteed to be the same set.
  */
-export function failStaleReports(olderThanMs = 3 * 60 * 1000): number {
+export function failStaleReports(olderThanMs = 90 * 1000): number {
+  // A running scan beats every few seconds (lib/scans/jobs.ts). One that
+  // has not for `olderThanMs` died with its process; rows from before
+  // heartbeats existed fall back to their start time.
   const cutoff = Date.now() - olderThanMs;
   const now = Date.now();
+  const stale = "state = 'running' AND COALESCE(heartbeat_at, started_at) < ?";
 
   return tx(() => {
     run(
@@ -372,14 +425,13 @@ export function failStaleReports(olderThanMs = 3 * 60 * 1000): number {
                   SELECT COUNT(*) FROM reports r
                    WHERE r.subscription_id = subscriptions.id
                      AND r.state = 'running'
-                     AND r.started_at < ?
+                     AND COALESCE(r.heartbeat_at, r.started_at) < ?
                 )
               ),
               updated_at = ?
         WHERE id IN (
                 SELECT subscription_id FROM reports
-                 WHERE state = 'running'
-                   AND started_at < ?
+                 WHERE ${stale}
                    AND subscription_id IS NOT NULL
               )`,
       [cutoff, now, cutoff],
@@ -388,9 +440,10 @@ export function failStaleReports(olderThanMs = 3 * 60 * 1000): number {
     return run(
       `UPDATE reports
           SET state = 'failed',
-              error_message = 'The analysis was interrupted before it finished.',
+              error_message = 'The analysis was interrupted before it finished. The scan was returned to your monthly allowance.',
+              error_code = 'ANALYSIS_FAILED',
               finished_at = ?
-        WHERE state = 'running' AND started_at < ?`,
+        WHERE ${stale}`,
       [now, cutoff],
     ).changes;
   });

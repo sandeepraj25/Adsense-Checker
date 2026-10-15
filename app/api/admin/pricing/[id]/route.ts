@@ -57,6 +57,32 @@ export async function PATCH(
       else patch.usdAmountCents = usd;
     }
   }
+  // Yearly billing (Phase 4): prices for twelve months, the per-plan
+  // switch and the badge. Same parsing as the monthly prices; "" or null
+  // withdraws a yearly price.
+  for (const [key, field, currency] of [
+    ["yearlyInr", "yearlyAmountPaise", "INR"],
+    ["yearlyUsd", "yearlyUsdCents", "USD"],
+  ] as const) {
+    const raw = body[key];
+    if (raw === undefined) continue;
+    if (raw === null || raw === "") {
+      patch[field] = null;
+      continue;
+    }
+    const minor = parseMajorToMinor(raw);
+    if (minor === null || minor === 0) fields[key] = `Enter a yearly ${currency} amount above zero, or leave it empty.`;
+    else patch[field] = minor;
+  }
+  if (body.yearlyEnabled !== undefined) {
+    if (typeof body.yearlyEnabled !== "boolean") fields.yearlyEnabled = "Turn yearly billing on or off.";
+    else patch.yearlyEnabled = body.yearlyEnabled;
+  }
+  if (body.yearlyBadge !== undefined) {
+    if (body.yearlyBadge === null || body.yearlyBadge === "") patch.yearlyBadge = null;
+    else if (typeof body.yearlyBadge !== "string" || body.yearlyBadge.trim().length > 40) fields.yearlyBadge = "Up to 40 characters.";
+    else patch.yearlyBadge = body.yearlyBadge.trim();
+  }
   if (Object.keys(fields).length > 0) {
     return jsonError("VALIDATION_ERROR", "Check the highlighted prices.", { fields });
   }
@@ -67,7 +93,11 @@ export async function PATCH(
 
   const inrChanged = patch.amountPaise !== undefined && patch.amountPaise !== before.amountPaise;
   const usdChanged = patch.usdAmountCents !== undefined && patch.usdAmountCents !== before.usdAmountCents;
-  if (!inrChanged && !usdChanged) {
+  const yInrChanged = patch.yearlyAmountPaise !== undefined && patch.yearlyAmountPaise !== before.yearlyAmountPaise;
+  const yUsdChanged = patch.yearlyUsdCents !== undefined && patch.yearlyUsdCents !== before.yearlyUsdCents;
+  const yOnChanged = patch.yearlyEnabled !== undefined && patch.yearlyEnabled !== before.yearlyEnabled;
+  const badgeChanged = patch.yearlyBadge !== undefined && (patch.yearlyBadge ?? null) !== before.yearlyBadge;
+  if (!inrChanged && !usdChanged && !yInrChanged && !yUsdChanged && !yOnChanged && !badgeChanged) {
     return jsonOk({ plan: before, changed: [] });
   }
 
@@ -78,6 +108,10 @@ export async function PATCH(
   if (usdChanged) {
     summary.push(`USD ${show(before.usdAmountCents, "USD")} → ${show(patch.usdAmountCents ?? null, "USD")}`);
   }
+  if (yInrChanged) summary.push(`yearly INR ${show(before.yearlyAmountPaise, "INR")} → ${show(patch.yearlyAmountPaise ?? null, "INR")}`);
+  if (yUsdChanged) summary.push(`yearly USD ${show(before.yearlyUsdCents, "USD")} → ${show(patch.yearlyUsdCents ?? null, "USD")}`);
+  if (yOnChanged) summary.push(patch.yearlyEnabled ? "yearly billing on for this plan" : "yearly billing off for this plan");
+  if (badgeChanged) summary.push(patch.yearlyBadge ? `badge "${patch.yearlyBadge}"` : "badge removed");
 
   if (body.confirmed !== true) {
     return jsonError("CONFIRMATION_REQUIRED", "Confirm this price change to save it.", {

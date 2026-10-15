@@ -16,6 +16,7 @@ import {
 } from "./types";
 import { newId } from "@/lib/ids";
 import { BILLING_PERIOD_DAYS, type Plan, type PlanId } from "@/lib/plans";
+import { addCalendarMonths, CYCLE_MONTHS, type BillingCycle } from "@/lib/billing/cycle";
 
 const DAY_MS = 86_400_000;
 
@@ -47,7 +48,9 @@ export function expireStaleSubscriptions(now = Date.now()): number {
  * the customer agreed to are up for renegotiation anyway.
  */
 export function rollBillingCycles(now = Date.now()): number {
-  return run(
+  // Subscriptions sold before calendar billing (schema v14) keep the
+  // 30-day cycle they were sold with.
+  const legacy = run(
     `UPDATE subscriptions
         SET scans_used  = 0,
             cycle_index = cycle_index + 1,
@@ -62,13 +65,93 @@ export function rollBillingCycles(now = Date.now()): number {
               (SELECT p.site_limit FROM plans p WHERE p.id = subscriptions.plan_id),
               site_limit
             ),
+            page_limit  = COALESCE(
+              (SELECT p.pages_per_scan FROM plans p WHERE p.id = subscriptions.plan_id),
+              page_limit
+            ),
             updated_at  = ?
       WHERE status = 'active'
+        AND calendar_billing = 0
         AND expires_at > ?
         AND cycle_end > 0
         AND cycle_end <= ?`,
     [BILLING_PERIOD_DAYS * DAY_MS, now, now, now, now],
   ).changes;
+  return legacy + rollCalendarCycles(now);
+}
+
+/**
+ * Monthly allowance resets for calendar-billed subscriptions — including
+ * yearly ones, whose scans and page limits still reset every month. Month
+ * n ends at start + n calendar months (never chained from the previous
+ * end, so the 31st does not drift to the 28th) and never after the
+ * subscription itself ends. A gap of several months is caught up in one
+ * step to the month that contains `now`.
+ */
+function rollCalendarCycles(now: number): number {
+  const due = many<{ id: string; starts_at: number; expires_at: number; cycle_index: number }>(
+    `SELECT id, starts_at, expires_at, cycle_index FROM subscriptions
+      WHERE status = 'active' AND calendar_billing = 1 AND expires_at > ? AND cycle_end > 0 AND cycle_end <= ?`,
+    [now, now],
+  );
+  let rolled = 0;
+  for (const row of due) {
+    // cycle_index n is month n, ending at start + n months; it has ended,
+    // so move to n + 1 — and further if several months passed unread.
+    let index = row.cycle_index + 1;
+    let end = addCalendarMonths(row.starts_at, index);
+    while (end <= now && end < row.expires_at) {
+      index += 1;
+      end = addCalendarMonths(row.starts_at, index);
+    }
+    const start = addCalendarMonths(row.starts_at, index - 1);
+    rolled += run(
+      `UPDATE subscriptions
+          SET scans_used = 0, cycle_index = ?, cycle_start = ?, cycle_end = ?, cycle_reset_at = ?,
+              scan_limit = COALESCE((SELECT p.scan_limit FROM plans p WHERE p.id = subscriptions.plan_id), scan_limit),
+              site_limit = COALESCE((SELECT p.site_limit FROM plans p WHERE p.id = subscriptions.plan_id), site_limit),
+              page_limit = COALESCE((SELECT p.pages_per_scan FROM plans p WHERE p.id = subscriptions.plan_id), page_limit),
+              updated_at = ?
+        WHERE id = ? AND cycle_index = ?`,
+      [index, start, Math.min(end, row.expires_at), now, now, row.id, row.cycle_index],
+    ).changes;
+  }
+  return rolled;
+}
+
+/**
+ * Takes features away from the *current* subscriptions on a plan.
+ *
+ * Only ever called when an administrator explicitly asks for it (Admin →
+ * Plans, "also remove from current subscribers"). By default a feature
+ * switched off on a plan stays with people who already paid for this
+ * period; this is the deliberate, logged exception. Returns how many
+ * subscriptions changed.
+ */
+export function revokeFeaturesFromActive(planId: PlanId, features: readonly string[], now = Date.now()): number {
+  if (features.length === 0) return 0;
+  const remove = new Set(features);
+  return tx(() => {
+    const rows = many<{ id: string; features_json: string }>(
+      "SELECT id, features_json FROM subscriptions WHERE plan_id = ? AND status = 'active' AND expires_at > ?",
+      [planId, now],
+    );
+    let changed = 0;
+    for (const row of rows) {
+      let list: unknown;
+      try {
+        list = JSON.parse(row.features_json);
+      } catch {
+        continue;
+      }
+      if (!Array.isArray(list)) continue;
+      const kept = list.filter((key) => !(typeof key === "string" && remove.has(key)));
+      if (kept.length === list.length) continue;
+      run("UPDATE subscriptions SET features_json = ?, updated_at = ? WHERE id = ?", [JSON.stringify(kept), now, row.id]);
+      changed += 1;
+    }
+    return changed;
+  });
 }
 
 /** Expire what is over, then refill what has rolled. Order matters. */
@@ -91,13 +174,20 @@ export function createSubscription(input: {
   paymentId?: string | null;
   orderId?: string | null;
   gateway?: GatewayId | null;
-  /** Months of access bought up front. One, unless an admin extends it. */
+  /** Billing periods bought up front. One, unless an admin extends it. */
   months?: number;
+  /** One month per period, or twelve. Monthly unless a yearly price was paid. */
+  billingCycle?: BillingCycle;
   now?: number;
 }): Subscription {
   const now = input.now ?? Date.now();
-  const months = Math.max(1, Math.floor(input.months ?? 1));
-  const cycleMs = BILLING_PERIOD_DAYS * DAY_MS;
+  const periods = Math.max(1, Math.floor(input.months ?? 1));
+  const cycle: BillingCycle = input.billingCycle ?? "monthly";
+  // Calendar months from the purchase (lib/billing/cycle.ts): one for a
+  // monthly period, twelve for a yearly one. The scan allowance resets
+  // every calendar month either way.
+  const expiresAt = addCalendarMonths(now, CYCLE_MONTHS[cycle] * periods);
+  const firstCycleEnd = Math.min(addCalendarMonths(now, 1), expiresAt);
   const row: SubscriptionRow = {
     id: newId("sub"),
     user_id: input.userId,
@@ -110,10 +200,10 @@ export function createSubscription(input: {
     scan_limit: input.plan.scanLimit,
     scans_used: 0,
     site_limit: input.plan.siteLimit,
-    validity_days: BILLING_PERIOD_DAYS * months,
+    validity_days: Math.round((expiresAt - now) / DAY_MS),
     purchased_at: now,
     starts_at: now,
-    expires_at: now + cycleMs * months,
+    expires_at: expiresAt,
     status: "active",
     payment_status: input.paymentStatus,
     payment_id: input.paymentId ?? null,
@@ -122,12 +212,17 @@ export function createSubscription(input: {
     created_at: now,
     updated_at: now,
     cycle_start: now,
-    cycle_end: now + cycleMs,
+    cycle_end: firstCycleEnd,
     cycle_index: 1,
     cycle_reset_at: null,
     features_json: JSON.stringify(input.plan.features),
     gateway: input.gateway ?? null,
     admin_note: null,
+    billing_cycle: cycle,
+    calendar_billing: 1,
+    page_limit: input.plan.pagesPerScan,
+    next_billing_cycle: null,
+    next_cycle_set_at: null,
   };
 
   run(
@@ -136,8 +231,8 @@ export function createSubscription(input: {
         scans_used, site_limit, validity_days, purchased_at, starts_at,
         expires_at, status, payment_status, payment_id, order_id, invoice_id,
         created_at, updated_at, cycle_start, cycle_end, cycle_index,
-        cycle_reset_at, features_json, gateway, admin_note)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        cycle_reset_at, features_json, gateway, admin_note, billing_cycle, calendar_billing, page_limit)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
       row.id,
       row.user_id,
@@ -166,6 +261,9 @@ export function createSubscription(input: {
       row.features_json,
       row.gateway,
       row.admin_note,
+      cycle,
+      1,
+      input.plan.pagesPerScan,
     ],
   );
 
@@ -311,7 +409,7 @@ export function setSubscriptionExpiry(id: string, expiresAt: number): boolean {
 /** Admin override of one account's monthly allowance. */
 export function setSubscriptionLimits(
   id: string,
-  limits: { scanLimit?: number; siteLimit?: number },
+  limits: { scanLimit?: number; siteLimit?: number; pageLimit?: number },
 ): boolean {
   const sets: string[] = [];
   const params: (string | number)[] = [];
@@ -322,6 +420,10 @@ export function setSubscriptionLimits(
   if (limits.siteLimit !== undefined) {
     sets.push("site_limit = ?");
     params.push(Math.max(1, Math.floor(limits.siteLimit)));
+  }
+  if (limits.pageLimit !== undefined) {
+    sets.push("page_limit = ?");
+    params.push(Math.max(1, Math.min(500, Math.floor(limits.pageLimit))));
   }
   if (sets.length === 0) return false;
   sets.push("updated_at = ?");
@@ -375,6 +477,23 @@ export function attachInvoiceToSubscription(
   ]);
 }
 
+/**
+ * Schedules (or clears) the billing cycle a customer wants at their next
+ * renewal. Nothing is charged and the current period is not touched; the
+ * renewal checkout uses it as its default. Only for this account's own
+ * active subscription.
+ */
+export function setNextBillingCycle(input: { subscriptionId: string; userId: string; cycle: BillingCycle | null; now?: number }): boolean {
+  const now = input.now ?? Date.now();
+  return (
+    run(
+      `UPDATE subscriptions SET next_billing_cycle = ?, next_cycle_set_at = ?, updated_at = ?
+        WHERE id = ? AND user_id = ? AND status = 'active' AND expires_at > ?`,
+      [input.cycle, input.cycle ? now : null, now, input.subscriptionId, input.userId, now],
+    ).changes === 1
+  );
+}
+
 export function cancelSubscription(id: string): void {
   run(
     "UPDATE subscriptions SET status = 'cancelled', updated_at = ? WHERE id = ?",
@@ -405,6 +524,8 @@ export function createPayment(input: {
   idempotencyKey?: string | null;
   /** What the browser was handed. Never contains a secret. */
   handoff?: unknown;
+  /** The cycle this order pays for. */
+  billingCycle?: BillingCycle;
 }): Payment {
   const now = Date.now();
   const row: PaymentRow = {
@@ -433,6 +554,7 @@ export function createPayment(input: {
     billing_country: input.billing?.country ?? null,
     idempotency_key: input.idempotencyKey ?? null,
     handoff_json: input.handoff === undefined ? null : JSON.stringify(input.handoff),
+    billing_cycle: input.billingCycle ?? "monthly",
   };
 
   try {
@@ -442,8 +564,8 @@ export function createPayment(input: {
         mode, gateway_order_id, gateway_payment_id, method, failure_reason,
         receipt, created_at, updated_at, verified_at, gateway, environment,
         raw_status, billing_name, billing_email, billing_phone, billing_country,
-        idempotency_key, handoff_json)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        idempotency_key, handoff_json, billing_cycle)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
       row.id,
       row.user_id,
@@ -470,6 +592,7 @@ export function createPayment(input: {
       row.billing_country ?? null,
       row.idempotency_key ?? null,
       row.handoff_json ?? null,
+      row.billing_cycle ?? "monthly",
     ],
   );
   } catch (error) {
@@ -637,6 +760,7 @@ export function createInvoice(input: {
   currency: string;
   periodStart: number;
   periodEnd: number;
+  billingCycle?: BillingCycle;
 }): Invoice {
   const now = Date.now();
   const row: InvoiceRow = {
@@ -653,14 +777,15 @@ export function createInvoice(input: {
     period_start: input.periodStart,
     period_end: input.periodEnd,
     issued_at: now,
+    billing_cycle: input.billingCycle ?? "monthly",
   };
 
   run(
     `INSERT INTO invoices
        (id, number, user_id, payment_id, subscription_id, billing_name,
         billing_email, plan_name, amount_paise, currency, period_start,
-        period_end, issued_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        period_end, issued_at, billing_cycle)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
       row.id,
       row.number,
@@ -675,6 +800,7 @@ export function createInvoice(input: {
       row.period_start,
       row.period_end,
       row.issued_at,
+      row.billing_cycle ?? "monthly",
     ],
   );
 

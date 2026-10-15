@@ -23,6 +23,7 @@ import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 
 import { registerVerified, startMailSink } from "./lib/mail-sink.mjs";
+import { isolatedServerEnv } from "./lib/server-env.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const workDir = mkdtempSync(path.join(tmpdir(), "aec-alerts-"));
@@ -74,7 +75,7 @@ function compileLib() {
   const nodeModules = path.join(outDir, "node_modules");
   mkdirSync(nodeModules, { recursive: true });
   symlinkSync(outDir, path.join(nodeModules, "@"), "dir");
-  for (const pkg of ["libphonenumber-js", "sharp"]) {
+  for (const pkg of ["libphonenumber-js", "sharp", "nodemailer", "cheerio"]) {
     try { symlinkSync(path.join(projectRoot, "node_modules", pkg), path.join(nodeModules, pkg), "dir"); } catch { /* optional */ }
   }
 }
@@ -369,7 +370,7 @@ const base = `http://127.0.0.1:${port}`;
 let serverLog = "";
 const server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "-p", String(port)], {
   cwd: projectRoot,
-  env: { ...process.env, ...SECRETS, ...mail.env, NODE_ENV: "production", DATA_DIR: dataDir, CRON_SECRET, CHECKOUT_ALERTS_BACKGROUND: "off", NEXT_PUBLIC_APP_URL: base },
+  env: isolatedServerEnv({ ...process.env, ...SECRETS, ...mail.env, NODE_ENV: "production", DATA_DIR: dataDir, CRON_SECRET, CHECKOUT_ALERTS_BACKGROUND: "off", NEXT_PUBLIC_APP_URL: base }),
   stdio: ["ignore", "pipe", "pipe"],
 });
 server.stdout.on("data", (d) => (serverLog += d));

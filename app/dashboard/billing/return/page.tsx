@@ -116,7 +116,7 @@ export default async function CheckoutReturnPage({
         }
         body={
           subscription
-            ? `${formatMoney(subscription.amountPaise, subscription.currency)} per month. You have ${subscription.scanLimit} scans for this billing month, and the allowance resets on ${formatDate(subscription.cycleEnd)}. The plan runs until ${formatDate(subscription.expiresAt)} and won’t renew automatically.`
+            ? `${formatMoney(subscription.amountPaise, subscription.currency)} per ${subscription.billingCycle === "yearly" ? "year" : "month"}. You have ${subscription.scanLimit} scans for this billing month, and the allowance resets on ${formatDate(subscription.cycleEnd)}. The plan runs until ${formatDate(subscription.expiresAt)} and won’t renew automatically.`
             : "The payment was verified with the gateway and your plan has been activated."
         }
         note={

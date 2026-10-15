@@ -74,7 +74,8 @@ export function sniffImage(bytes: Uint8Array): Sniffed | null {
   return null;
 }
 
-type SharpModule = typeof import("sharp");
+// sharp 0.35 ships ES-module typings: the function is the default export.
+type SharpModule = typeof import("sharp").default;
 
 /**
  * Loaded lazily so a machine that has not run `npm install` since sharp

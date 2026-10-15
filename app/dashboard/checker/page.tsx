@@ -1,3 +1,4 @@
+import { pagesPerScanFor } from "@/lib/limits";
 import type { Metadata } from "next";
 
 import { CheckerPanel } from "@/components/dashboard/CheckerPanel";
@@ -57,6 +58,7 @@ export default async function CheckerPage({
                 limit: subscription.scanLimit,
                 remaining: subscription.scansRemaining,
                 resetsOn: formatDate(subscription.cycleEnd),
+                pagesPerScan: pagesPerScanFor(subscription),
               }
             : null
         }

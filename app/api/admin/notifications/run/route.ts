@@ -9,7 +9,7 @@ export async function POST() {
   const guard = await requireAdminApi();
   if (!guard.ok) return guard.response;
   try {
-    const result = await runAlertJob();
+    const result = await runAlertJob(Date.now(), "admin");
     return jsonOk({ summary: result.summary });
   } catch (error) {
     return jsonServerError("admin/notifications/run", error);

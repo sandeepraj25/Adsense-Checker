@@ -9,16 +9,19 @@ const columns = [
     links: [
       { label: "How it works", href: "/#process" },
       { label: "What gets checked", href: "/#features" },
-      { label: "Sample report", href: "/#report" },
+      { label: "Sample report", href: "/#sample-report" },
       { label: "Pricing", href: "/pricing" },
     ],
   },
   {
     heading: "Resources",
     links: [
-      { label: "Rejection reasons", href: "/#guide-rejections" },
-      { label: "Required pages guide", href: "/#guide-required-pages" },
-      { label: "ads.txt reference", href: "/#guide-ads-txt" },
+      // The homepage no longer has the guide sections these first linked
+      // to; until it does, they open the FAQ, which covers rejections and
+      // what a scan checks, instead of an anchor that goes nowhere.
+      { label: "Rejection reasons", href: "/#faq" },
+      { label: "Required pages guide", href: "/#faq" },
+      { label: "ads.txt reference", href: "/#faq" },
       { label: "Changelog", href: "/#top" },
     ],
   },

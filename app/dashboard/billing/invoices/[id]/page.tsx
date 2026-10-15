@@ -139,7 +139,7 @@ export default async function InvoicePage({
             <tr className="border-b border-ink-700">
               <td className="py-4 align-top">
                 <p className="text-[0.9375rem] text-cloud-50">
-                  {invoice.planName} plan — monthly subscription
+                  {invoice.planName} plan — {invoice.billingCycle === "yearly" ? "yearly subscription (12 months)" : "monthly subscription"}
                 </p>
                 <p className="mt-1 max-w-sm text-[0.8125rem] leading-relaxed text-cloud-600">
                   {subscription

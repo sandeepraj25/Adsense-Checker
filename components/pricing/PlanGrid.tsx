@@ -10,6 +10,8 @@ import { CURRENCY_META, type Currency } from "@/lib/money";
 import type { CheckoutOption } from "@/lib/payments";
 import type { PlanRecord } from "@/lib/plan-catalogue";
 import { PLAN_RANK, planPrice, type PlanId } from "@/lib/plans";
+import type { BillingCycle } from "@/lib/billing/cycle";
+import { yearlyOffer } from "@/lib/billing/offer";
 
 /**
  * Where a plan's call to action leads for a visitor who isn't signed in:
@@ -24,11 +26,14 @@ export function planSignupHref(input: {
   planId: string;
   plans: PlanRecord[];
   carryUrl?: string;
+  /** Yearly carries through sign-up to the yearly checkout. */
+  cycle?: BillingCycle;
 }): string {
   const { planId, plans, carryUrl } = input;
   const nextParams = new URLSearchParams({ plan: planId });
   const paid = plans.some((p) => p.id === planId && p.purchasable && p.amountPaise > 0);
   if (carryUrl) nextParams.set("url", carryUrl);
+  if (paid && input.cycle === "yearly") nextParams.set("cycle", "yearly");
   const next = `${paid ? "/checkout" : "/pricing"}?${nextParams.toString()}`;
 
   const params = new URLSearchParams({
@@ -57,6 +62,8 @@ export function PlanGrid({
   options,
   carryUrl,
   selectedPlanId,
+  cycle = "monthly",
+  yearlyOn = false,
 }: {
   plans: PlanRecord[];
   user: User | null;
@@ -66,8 +73,12 @@ export function PlanGrid({
   options: CheckoutOption[];
   carryUrl?: string;
   selectedPlanId: PlanId | null;
+  /** Which prices the cards show. Plans with no yearly offer stay monthly. */
+  cycle?: BillingCycle;
+  /** The site-wide yearly switch, read on the server. */
+  yearlyOn?: boolean;
 }) {
-  const signupHref = (planId: string) => planSignupHref({ planId, plans, carryUrl });
+  const signupHref = (planId: string, planCycle: BillingCycle = "monthly") => planSignupHref({ planId, plans, carryUrl, cycle: planCycle });
   const methodNames = options.map((option) => option.label);
 
   return (
@@ -78,6 +89,10 @@ export function PlanGrid({
     <div className="mx-auto grid max-w-lg grid-cols-1 gap-5 lg:max-w-6xl lg:grid-cols-3">
       {plans.map((plan, index) => {
         const isCurrent = subscription?.planId === plan.id;
+        // In yearly mode a plan without a valid yearly offer keeps its
+        // monthly price and checkout — never a made-up yearly figure.
+        const offer = cycle === "yearly" ? yearlyOffer(plan, currency, yearlyOn) : null;
+        const planCycle: BillingCycle = offer ? "yearly" : "monthly";
         const previous = index > 0 ? plans[index - 1] : null;
 
         const inherits =
@@ -133,11 +148,12 @@ export function PlanGrid({
         } else if (!user) {
           cta = (
             <ButtonLink
-              href={signupHref(plan.id)}
+              href={signupHref(plan.id, planCycle)}
               variant={plan.featured ? "primary" : "ghost"}
               size="md"
             >
               Get {plan.name}
+              {planCycle === "yearly" ? " yearly" : ""}
             </ButtonLink>
           );
         } else {
@@ -145,10 +161,11 @@ export function PlanGrid({
             <CheckoutButton
               planId={plan.id}
               planName={plan.name}
-              label={`${verb} ${plan.name}`}
+              label={`${verb} ${plan.name}${planCycle === "yearly" ? " yearly" : ""}`}
               options={options}
               carryUrl={carryUrl}
               currency={currency}
+              cycle={planCycle}
               variant={plan.featured ? "primary" : "ghost"}
             />
           );
@@ -160,6 +177,8 @@ export function PlanGrid({
               plan={plan}
               currency={currency}
               current={isCurrent}
+              cycle={cycle}
+              yearly={offer}
               className={
                 plan.id === selectedPlanId
                   ? "h-full ring-2 ring-azure-500/30"
@@ -183,7 +202,9 @@ export function PlanGrid({
       </span>
 
       <span>
-        Prices in {CURRENCY_META[currency].name} per month, inclusive of applicable taxes
+        {cycle === "yearly"
+          ? `Prices in ${CURRENCY_META[currency].name}, inclusive of applicable taxes. Yearly plans are paid once for 12 months; scans still reset every month`
+          : `Prices in ${CURRENCY_META[currency].name} per month, inclusive of applicable taxes`}
       </span>
 
       <span>Invoice issued for every payment</span>

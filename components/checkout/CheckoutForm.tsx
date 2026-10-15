@@ -67,7 +67,7 @@ export function CheckoutForm({
    * the server can refuse it if the price or currency changed meanwhile —
    * the server always charges its own figure.
    */
-  plan: { id: string; name: string; priceLabel: string; currency: string; amountMinor: number };
+  plan: { id: string; name: string; priceLabel: string; currency: string; amountMinor: number; billingCycle?: "monthly" | "yearly" };
   options: CheckoutOption[];
   countries: CountryOption[];
   prefill: { name: string; email: string; country: string; phone: string };
@@ -114,7 +114,7 @@ export function CheckoutForm({
       void fetch("/api/checkout/progress", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ checkoutId: checkoutId.current, planId: plan.id, currency: plan.currency, billing: values }),
+        body: JSON.stringify({ checkoutId: checkoutId.current, planId: plan.id, currency: plan.currency, billingCycle: plan.billingCycle ?? "monthly", billing: values }),
       })
         .then((res) => res.json())
         .then((data: { ok: boolean; checkoutId?: string }) => {
@@ -127,7 +127,7 @@ export function CheckoutForm({
         .catch(() => {});
     }, 1500);
     return () => window.clearTimeout(timer);
-  }, [values, plan.id, plan.currency]);
+  }, [values, plan.id, plan.currency, plan.billingCycle]);
 
   const chosen = options.find((option) => option.id === gatewayId) ?? options[0];
   const busy = status.kind === "submitting" || status.kind === "with-gateway" || status.kind === "verifying";
@@ -200,6 +200,7 @@ export function CheckoutForm({
         body: JSON.stringify({
           planId: plan.id,
           currency: plan.currency,
+          billingCycle: plan.billingCycle ?? "monthly",
           expectedAmount: plan.amountMinor,
           gateway: chosen.id,
           checkoutId: checkoutId.current,

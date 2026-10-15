@@ -22,13 +22,18 @@ import {
   RecommendationList,
   RiskList,
   SignalGrid,
+  UnreadPagesTeaser,
 } from "@/components/report/ReportSections";
 import { RunningPanel } from "@/components/report/RunningPanel";
+import { AreaSummary, SmartInsights } from "@/components/report/Areas";
+import { countByArea, splitInsights } from "@/lib/report/areas";
 import { Badge } from "@/components/ui/Badge";
 import { ButtonLink } from "@/components/ui/Button";
 import { requireUser } from "@/lib/auth/guard";
 import { findReportForUser, listIssues } from "@/lib/db/audits";
-import { formatDateTime, formatDuration, plural } from "@/lib/format";
+import { formatDate, formatDateTime, formatDuration, plural } from "@/lib/format";
+import { canSchedule, getSchedule } from "@/lib/schedules/store";
+import { WeeklyRescanToggle } from "@/components/report/WeeklyRescanToggle";
 import { cheapestPlanWith } from "@/lib/plan-catalogue";
 
 export const metadata: Metadata = {
@@ -59,11 +64,28 @@ export default async function ReportPage({
 
   const canExport = report.features.includes("pdf_export");
 
+  // Smart insights get their own section; the findings are everything else.
+  const { findings, insights } = splitInsights(issues);
+  const areaCounts = countByArea(issues);
+
   const exportPlan = canExport
     ? null
     : cheapestPlanWith("pdf_export");
 
   const metrics = report.metrics;
+
+  // Weekly rescans (feature 53): shown to accounts whose plan includes
+  // them, and to anyone with a schedule so it can always be turned off.
+  const schedule = getSchedule(user.id, report.domain);
+  const showRescans =
+    report.state === "complete" &&
+    report.analysisMode === "live" &&
+    (canSchedule(user.id).ok || Boolean(schedule?.enabled));
+  const rescanNote = !schedule?.enabled
+    ? null
+    : schedule.state === "paused"
+      ? schedule.stateReason
+      : `Next scan around ${formatDate(schedule.nextRunAt)}`;
 
   const recommendations =
     metrics.recommendations ?? [];
@@ -74,11 +96,25 @@ export default async function ReportPage({
   const hasSignals = Object.keys(metrics).some(
     (key) =>
       key !== "recommendations" &&
+      key !== "unreadPages" &&
       key !== "risks",
   );
 
   return (
-    <div className="font-[var(--font-sans)] flex flex-col gap-8">
+    <div
+      className={`font-[var(--font-sans)] flex flex-col gap-8${canExport ? "" : " report-print-locked"}`}
+    >
+      {/* What a printout shows when this report's plan has no PDF export:
+          the same access rule as the button, so Ctrl+P is no way round it. */}
+      {canExport ? null : (
+        <div className="print-only-notice hidden">
+          <p className="text-lg font-semibold">PDF export is not included in the {report.planName} plan.</p>
+          <p className="mt-2">
+            {exportPlan ? `It is available on ${exportPlan.name}. ` : ""}This report can be read online at
+            your dashboard.
+          </p>
+        </div>
+      )}
       {/* =========================================================
           REPORT HEADER
       ========================================================= */}
@@ -106,6 +142,11 @@ export default async function ReportPage({
               {report.domain}
             </h1>
 
+            <p className="mt-2 hidden text-sm text-cloud-400 print:block">
+              Exported {formatDateTime(Date.now())}. Contains the checks included in the {report.planName} plan
+              when this scan ran; locked checks are not part of this export.
+            </p>
+
             <a
               href={report.url}
               target="_blank"
@@ -125,6 +166,15 @@ export default async function ReportPage({
                   canExport={canExport}
                   exportPlanName={exportPlan?.name}
                 />
+                {showRescans ? (
+                  <div className="mt-4">
+                    <WeeklyRescanToggle
+                      domain={report.domain}
+                      enabled={Boolean(schedule?.enabled)}
+                      note={rescanNote}
+                    />
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -175,6 +225,11 @@ export default async function ReportPage({
             className="lg:border-r lg:border-ink-700"
           >
             {report.pagesFetched}
+            {metrics.partial ? (
+              <span className="block text-[0.75rem] font-normal text-amber-400">
+                Time limit reached — some pages weren&apos;t read
+              </span>
+            ) : null}
           </Meta>
 
           <Meta
@@ -245,9 +300,16 @@ export default async function ReportPage({
             </div>
 
             <div className="mt-4">
-              <IssueList issues={issues} />
+              <AreaSummary counts={areaCounts} />
+            </div>
+
+            <div className="mt-8">
+              <IssueList issues={findings} />
             </div>
           </section>
+
+          {/* SMART INSIGHTS */}
+          <SmartInsights insights={insights} />
 
           {/* SIGNALS */}
           {hasSignals ? (
@@ -326,7 +388,7 @@ export default async function ReportPage({
           
                 <p className="mt-2 max-w-2xl text-[0.9375rem] leading-relaxed text-cloud-300">
                   Every page we reached is scored individually, so you can quickly see
-                  which pages are pulling your website's overall score down.
+                  which pages are pulling your website&apos;s overall score down.
                 </p>
               </div>
             </div>
@@ -336,6 +398,9 @@ export default async function ReportPage({
             </div>
           </section>
           ) : null}
+
+          {/* MORE PAGES THAN THIS PLAN READS */}
+          <UnreadPagesTeaser unread={metrics.unreadPages} pageLimit={report.pageLimit} />
 
           {/* LOCKED FEATURES */}
           {report.locked.length > 0 ? (
@@ -427,7 +492,7 @@ function FailedPanel({
           </p>
 
           <p className="mt-2 text-[0.8125rem] leading-relaxed text-cloud-500">
-            The scan was returned to this month's
+            The scan was returned to this month&apos;s
             allowance, so trying again costs you
             nothing.
           </p>

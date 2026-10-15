@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Globe } from "lucide-react";
 
-import { PlanGrid, planSignupHref } from "@/components/pricing/PlanGrid";
+import { planSignupHref } from "@/components/pricing/PlanGrid";
+import { PricingPlans } from "@/components/pricing/PricingPlans";
 import { Navbar } from "@/components/sections/Navbar";
 import { Footer } from "@/components/sections/Footer";
 import { Container } from "@/components/ui/Container";
@@ -53,9 +54,9 @@ const faqs = [
 export default async function PricingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ url?: string; plan?: string }>;
+  searchParams: Promise<{ url?: string; plan?: string; cycle?: string }>;
 }) {
-  const { url, plan: selectedPlan } = await searchParams;
+  const { url, plan: selectedPlan, cycle } = await searchParams;
   // One currency for the whole site, chosen by an administrator. There is
   // no switcher; a `currency` left in an old link is ignored.
   const currency = siteCurrency();
@@ -143,7 +144,8 @@ export default async function PricingPage({
                 unchanged.
               </p>
             ) : null}
-            <PlanGrid
+            <PricingPlans
+              initialCycle={cycle === "yearly" ? "yearly" : "monthly"}
               plans={plans}
               user={user}
               subscription={subscription}

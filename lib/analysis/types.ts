@@ -1,4 +1,4 @@
-import type { IssuePriority, IssueStatus, PageScore, ReportMetrics, Verdict } from "@/lib/db/types";
+import type { FindingAnalyzerDetail, IssuePriority, IssueStatus, PageScore, ReportMetrics, Verdict } from "@/lib/db/types";
 import type { FeatureKey } from "@/lib/plans";
 
 export const ENGINE_VERSION = "2.0.0";
@@ -85,7 +85,15 @@ export type Finding = {
    * pricing page honest.
    */
   feature?: FeatureKey;
+  /**
+   * Present on lines produced by an analyzer (lib/analysis/analyzers):
+   * its own report category, every individual finding with its evidence
+   * and page, and its score and confidence when it gives them.
+   */
+  analyzer?: FindingAnalyzerDetail;
 };
+
+export type { FindingAnalyzerDetail } from "@/lib/db/types";
 
 /** One item of the Pro remediation plan, in the order to work through. */
 export type { Recommendation, PolicyRisk } from "@/lib/db/types";
@@ -122,6 +130,11 @@ export type AnalysisOutcome = {
   metrics: ReportMetrics;
   /** How many checks actually ran, which varies by plan. */
   checksRun: number;
+  /**
+   * Numeric signals from this scan, by stable name, for the prediction
+   * model. Never shown to the user and never contains page text.
+   */
+  featureVector: Record<string, number>;
 };
 
 export class AnalysisFailure extends Error {

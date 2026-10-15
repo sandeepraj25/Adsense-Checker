@@ -1,0 +1,4 @@
+{
+  "expect": "warn",
+  "itemMatch": "not published"
+}

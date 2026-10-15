@@ -10,12 +10,18 @@ import { Field } from "@/components/ui/Field";
 import { Spinner } from "@/components/ui/Spinner";
 import { useToast } from "@/components/ui/Toast";
 import { formatMoney, minorToInput, parseMajorToMinor } from "@/lib/money";
+import { yearlyDiscountPercent } from "@/lib/billing/cycle";
 
 export type PricingRow = {
   id: string;
   name: string;
   inrMinor: number;
   usdMinor: number | null;
+  /** Twelve-month prices; null = not offered yearly in that currency. */
+  yearlyInrMinor: number | null;
+  yearlyUsdMinor: number | null;
+  yearlyEnabled: boolean;
+  yearlyBadge: string | null;
   interval: string;
   status: { label: string; tone: "pass" | "neutral" | "warn" };
   subscribers: number;
@@ -63,6 +69,10 @@ function PriceRow({ row }: { row: PricingRow }) {
   const [editing, setEditing] = useState(false);
   const [inr, setInr] = useState(minorToInput(row.inrMinor));
   const [usd, setUsd] = useState(row.usdMinor === null ? "" : minorToInput(row.usdMinor));
+  const [yInr, setYInr] = useState(row.yearlyInrMinor === null ? "" : minorToInput(row.yearlyInrMinor));
+  const [yUsd, setYUsd] = useState(row.yearlyUsdMinor === null ? "" : minorToInput(row.yearlyUsdMinor));
+  const [yOn, setYOn] = useState(row.yearlyEnabled);
+  const [badge, setBadge] = useState(row.yearlyBadge ?? "");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
@@ -72,6 +82,10 @@ function PriceRow({ row }: { row: PricingRow }) {
     setEditing(false);
     setInr(minorToInput(row.inrMinor));
     setUsd(row.usdMinor === null ? "" : minorToInput(row.usdMinor));
+    setYInr(row.yearlyInrMinor === null ? "" : minorToInput(row.yearlyInrMinor));
+    setYUsd(row.yearlyUsdMinor === null ? "" : minorToInput(row.yearlyUsdMinor));
+    setYOn(row.yearlyEnabled);
+    setBadge(row.yearlyBadge ?? "");
     setFieldErrors({});
     setFormError(null);
     setPending(null);
@@ -87,6 +101,13 @@ function PriceRow({ row }: { row: PricingRow }) {
       if (usdMinor === null) errors.usd = "Enter an amount like 5.99.";
       else if (usdMinor === 0) errors.usd = "Leave it empty to stop offering this plan in USD.";
     }
+    for (const [key, value] of [["yearlyInr", yInr], ["yearlyUsd", yUsd]] as const) {
+      if (value.trim() === "") continue;
+      const minor = parseMajorToMinor(value);
+      if (minor === null || minor === 0) errors[key] = "Enter an amount above zero, or leave it empty.";
+    }
+    if (yOn && yInr.trim() === "" && yUsd.trim() === "") errors.yearlyInr = "Set a yearly price to offer yearly billing.";
+    if (badge.trim().length > 40) errors.yearlyBadge = "Up to 40 characters.";
     return errors;
   }
 
@@ -102,7 +123,15 @@ function PriceRow({ row }: { row: PricingRow }) {
       const res = await fetch(`/api/admin/pricing/${row.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ inr, usd: usd.trim() === "" ? null : usd, confirmed }),
+        body: JSON.stringify({
+          inr,
+          usd: usd.trim() === "" ? null : usd,
+          yearlyInr: yInr.trim() === "" ? null : yInr,
+          yearlyUsd: yUsd.trim() === "" ? null : yUsd,
+          yearlyEnabled: yOn,
+          yearlyBadge: badge.trim() === "" ? null : badge.trim(),
+          confirmed,
+        }),
       });
       const data = (await res.json().catch(() => null)) as
         | { ok: true; changed: string[] }
@@ -155,7 +184,18 @@ function PriceRow({ row }: { row: PricingRow }) {
 
         <div>
           <p className="text-[0.8125rem] text-cloud-400 md:hidden">Billing</p>
-          <p className="text-[0.9375rem] text-cloud-200">{row.interval}</p>
+          <p className="text-[0.9375rem] text-cloud-200">{row.yearlyEnabled ? "Monthly + yearly" : row.interval}</p>
+          {row.yearlyEnabled ? (
+            <p className="mt-0.5 text-[0.8125rem] leading-snug text-cloud-400">
+              {[
+                row.yearlyInrMinor !== null ? `${formatMoney(row.yearlyInrMinor, "INR")}/yr${discountNote(row.inrMinor, row.yearlyInrMinor)}` : null,
+                row.yearlyUsdMinor !== null ? `${formatMoney(row.yearlyUsdMinor, "USD")}/yr${discountNote(row.usdMinor, row.yearlyUsdMinor)}` : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+              {row.yearlyBadge ? ` · “${row.yearlyBadge}”` : ""}
+            </p>
+          ) : null}
         </div>
 
         <div>
@@ -214,6 +254,45 @@ function PriceRow({ row }: { row: PricingRow }) {
             />
           </div>
 
+          <fieldset className="mt-4 border-t border-ink-700 pt-4" disabled={pending !== null}>
+            <legend className="sr-only">Yearly billing</legend>
+            <label className="flex items-center gap-2.5 text-[0.9375rem] font-medium text-cloud-50">
+              <input type="checkbox" checked={yOn} onChange={(event) => setYOn(event.target.checked)} className="size-4 accent-azure-500" />
+              Offer yearly billing for {row.name}
+            </label>
+            <div className="mt-3 grid gap-3 sm:grid-cols-3">
+              <Field
+                label="INR per year (₹)"
+                name={`${row.id}-yearly-inr`}
+                inputMode="decimal"
+                value={yInr}
+                error={fieldErrors.yearlyInr}
+                hint={liveDiscount(inr, yInr) ?? "Twelve months, paid once."}
+                placeholder="Not offered"
+                onChange={(event) => setYInr(event.target.value)}
+              />
+              <Field
+                label="USD per year ($)"
+                name={`${row.id}-yearly-usd`}
+                inputMode="decimal"
+                value={yUsd}
+                error={fieldErrors.yearlyUsd}
+                hint={liveDiscount(usd, yUsd) ?? "Leave empty to not offer yearly in USD."}
+                placeholder="Not offered"
+                onChange={(event) => setYUsd(event.target.value)}
+              />
+              <Field
+                label="Yearly badge (optional)"
+                name={`${row.id}-yearly-badge`}
+                value={badge}
+                error={fieldErrors.yearlyBadge}
+                hint="e.g. 2 months free"
+                maxLength={40}
+                onChange={(event) => setBadge(event.target.value)}
+              />
+            </div>
+          </fieldset>
+
           {formError ? (
             <p role="alert" className="mt-3 text-[0.875rem] text-rose-400">
               {formError}
@@ -262,6 +341,22 @@ function PriceRow({ row }: { row: PricingRow }) {
       ) : null}
     </li>
   );
+}
+
+/** " · save 17%" against twelve monthly payments, or "" when there is no saving. */
+function discountNote(monthly: number | null, yearly: number | null): string {
+  const pct = yearlyDiscountPercent(monthly, yearly);
+  return pct ? ` · save ${pct}%` : "";
+}
+
+/** The discount for the amounts being typed, for the field hint. */
+function liveDiscount(monthlyInput: string, yearlyInput: string): string | null {
+  if (yearlyInput.trim() === "") return null;
+  const monthly = parseMajorToMinor(monthlyInput);
+  const yearly = parseMajorToMinor(yearlyInput);
+  if (yearly === null || yearly === 0) return null;
+  const pct = yearlyDiscountPercent(monthly, yearly);
+  return pct ? `Saves ${pct}% vs 12 monthly payments.` : "No saving vs 12 monthly payments.";
 }
 
 function PriceCell({ label, value }: { label: string; value: string | null }) {

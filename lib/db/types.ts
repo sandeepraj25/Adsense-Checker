@@ -1,3 +1,4 @@
+import { isBillingCycle, parseBillingCycle, type BillingCycle } from "@/lib/billing/cycle";
 import type { FeatureKey, PlanId } from "@/lib/plans";
 import { isFeatureKey } from "@/lib/plans";
 
@@ -18,7 +19,8 @@ export type GatewayId = "razorpay" | "cashfree" | "paypal";
 export type GatewayEnvironment = "sandbox" | "live";
 export type ReportState = "running" | "complete" | "failed";
 export type Verdict = "ready" | "needs_improvement" | "not_ready";
-export type IssueStatus = "pass" | "warn" | "fail";
+/** `error`: the check itself could not run (an internal failure), so it says nothing about the site. */
+export type IssueStatus = "pass" | "warn" | "fail" | "error";
 export type IssuePriority = "high" | "medium" | "low";
 export type AnalysisMode = "live" | "demo";
 export type UserRole = "user" | "admin";
@@ -165,6 +167,13 @@ export type SubscriptionRow = {
   features_json: string;
   gateway: string | null;
   admin_note: string | null;
+  /* schema v14 — absent on rows read before the migration ran */
+  billing_cycle?: string | null;
+  calendar_billing?: number | null;
+  next_billing_cycle?: string | null;
+  next_cycle_set_at?: number | null;
+  /* schema v15 */
+  page_limit?: number | null;
 };
 
 export type Subscription = {
@@ -207,6 +216,18 @@ export type Subscription = {
   isCapped: boolean;
   /** Active, in date, and has at least one scan left this month. */
   isUsable: boolean;
+  /** What was paid for: one month or twelve. Monthly for every older row. */
+  billingCycle: BillingCycle;
+  /** Periods follow calendar months (purchases from schema v14 on). */
+  calendarBilling: boolean;
+  /** A cycle the customer chose for their next renewal, or null. */
+  nextBillingCycle: BillingCycle | null;
+  /**
+   * Content pages per scan, snapshotted from the plan and refreshed at each
+   * monthly reset. Null on rows sold before limits existed — the plan's
+   * current value applies (lib/limits.ts).
+   */
+  pageLimit: number | null;
 };
 
 const DAY_MS = 86_400_000;
@@ -249,6 +270,10 @@ export function toSubscription(row: SubscriptionRow, now = Date.now()): Subscrip
     isExpired,
     isCapped: remaining === 0,
     isUsable: status === "active" && !isExpired && remaining > 0,
+    billingCycle: parseBillingCycle(row.billing_cycle),
+    calendarBilling: row.calendar_billing === 1,
+    nextBillingCycle: isBillingCycle(row.next_billing_cycle) ? row.next_billing_cycle : null,
+    pageLimit: typeof row.page_limit === "number" && row.page_limit > 0 ? row.page_limit : null,
   };
 }
 
@@ -281,6 +306,8 @@ export type PaymentRow = {
   billing_country?: string | null;
   idempotency_key?: string | null;
   handoff_json?: string | null;
+  /* schema v14 */
+  billing_cycle?: string | null;
 };
 
 export type Payment = {
@@ -306,6 +333,8 @@ export type Payment = {
   billingPhone: string | null;
   billingCountry: string | null;
   updatedAt: number;
+  /** The cycle this order pays for. Monthly for every older row. */
+  billingCycle: BillingCycle;
 };
 
 export function toPayment(row: PaymentRow): Payment {
@@ -331,6 +360,7 @@ export function toPayment(row: PaymentRow): Payment {
     billingPhone: row.billing_phone ?? null,
     billingCountry: row.billing_country ?? null,
     updatedAt: row.updated_at,
+    billingCycle: parseBillingCycle(row.billing_cycle),
   };
 }
 
@@ -471,6 +501,7 @@ export type InvoiceRow = {
   period_start: number;
   period_end: number;
   issued_at: number;
+  billing_cycle?: string | null;
 };
 
 export type Invoice = {
@@ -487,6 +518,7 @@ export type Invoice = {
   periodStart: number;
   periodEnd: number;
   issuedAt: number;
+  billingCycle: BillingCycle;
 };
 
 export function toInvoice(row: InvoiceRow): Invoice {
@@ -504,6 +536,7 @@ export function toInvoice(row: InvoiceRow): Invoice {
     periodStart: row.period_start,
     periodEnd: row.period_end,
     issuedAt: row.issued_at,
+    billingCycle: parseBillingCycle(row.billing_cycle),
   };
 }
 
@@ -579,6 +612,13 @@ export type PolicyRisk = {
 
 /** Numbers worth keeping beside the score, for the report's detail pane. */
 export type ReportMetrics = {
+  /** The scan hit its time limit, so some pages or files were not read. */
+  partial?: boolean;
+  /**
+   * Content pages linked from the pages read but not read themselves
+   * (Phase 5 page allowance). A lower bound, counted from links in hand.
+   */
+  unreadPages?: number;
   totalWords?: number;
   averageWords?: number;
   /** Estimated machine-written likelihood, 0–100. An estimate, not a verdict. */
@@ -597,6 +637,9 @@ export type ReportMetrics = {
   orphanPages?: number;
   brokenLinks?: number;
   riskLevel?: "low" | "moderate" | "elevated" | "high";
+  /** Broad subject of the site (lib/analysis/niche.ts), for like-for-like comparisons. */
+  niche?: string;
+  nicheConfidence?: "high" | "medium" | "low";
   /** Ordered remediation plan. Pro only. */
   recommendations?: Recommendation[];
   /** Ranked policy risks. Pro only. */
@@ -624,6 +667,10 @@ export type ReportRow = {
   analysis_mode: string;
   pages_fetched: number;
   error_message: string | null;
+  /* schema v15 */
+  error_code?: string | null;
+  heartbeat_at?: number | null;
+  page_limit?: number | null;
   started_at: number;
   finished_at: number | null;
   duration_ms: number | null;
@@ -656,6 +703,10 @@ export type Report = {
   analysisMode: AnalysisMode;
   pagesFetched: number;
   errorMessage: string | null;
+  /** The API error code a failed background scan ended with, when known. */
+  errorCode: string | null;
+  /** The pages-per-scan allowance the scan ran with (null on older reports). */
+  pageLimit: number | null;
   startedAt: number;
   finishedAt: number | null;
   durationMs: number | null;
@@ -691,6 +742,8 @@ export function toReport(row: ReportRow): Report {
     analysisMode: row.analysis_mode as AnalysisMode,
     pagesFetched: row.pages_fetched,
     errorMessage: row.error_message,
+    errorCode: row.error_code ?? null,
+    pageLimit: row.page_limit ?? null,
     startedAt: row.started_at,
     finishedAt: row.finished_at,
     durationMs: row.duration_ms,
@@ -701,6 +754,44 @@ export function toReport(row: ReportRow): Report {
     metrics: jsonObject<ReportMetrics>(row.metrics_json, {}),
     checksRun: row.checks_run,
   };
+}
+
+/** What an analyzer adds to its report line (stored as details_json). */
+export type FindingAnalyzerDetail = {
+  category: "content" | "policy" | "trust" | "technical" | "smart";
+  items: Array<{ message: string; evidence?: string; pageUrl?: string }>;
+  score?: number;
+  confidence?: "high" | "medium" | "low";
+};
+
+const ANALYZER_CATEGORIES = new Set(["content", "policy", "trust", "technical", "smart"]);
+
+/** Reads details_json defensively: anything malformed is simply absent. */
+function parseAnalyzerDetail(json: string | null | undefined): FindingAnalyzerDetail | null {
+  if (!json) return null;
+  try {
+    const value = JSON.parse(json) as Partial<FindingAnalyzerDetail> | null;
+    if (!value || typeof value !== "object" || !ANALYZER_CATEGORIES.has(String(value.category))) return null;
+    const items = Array.isArray(value.items)
+      ? value.items.flatMap((item) =>
+          item && typeof item.message === "string"
+            ? [{
+                message: item.message,
+                ...(typeof item.evidence === "string" ? { evidence: item.evidence } : {}),
+                ...(typeof item.pageUrl === "string" ? { pageUrl: item.pageUrl } : {}),
+              }]
+            : [],
+        )
+      : [];
+    return {
+      category: value.category as FindingAnalyzerDetail["category"],
+      items,
+      ...(typeof value.score === "number" ? { score: value.score } : {}),
+      ...(value.confidence === "high" || value.confidence === "medium" || value.confidence === "low" ? { confidence: value.confidence } : {}),
+    };
+  } catch {
+    return null;
+  }
 }
 
 export type ReportIssueRow = {
@@ -716,6 +807,8 @@ export type ReportIssueRow = {
   evidence: string | null;
   sort_order: number;
   feature: string | null;
+  /** Added in V10; absent on databases read before that migration ran. */
+  details_json?: string | null;
 };
 
 export type ReportIssue = {
@@ -731,6 +824,8 @@ export type ReportIssue = {
   evidence: string | null;
   /** The advertised feature that produced this finding, when known. */
   feature: FeatureKey | null;
+  /** Analyzer lines only (null for the built-in checks and older reports). */
+  analyzer: FindingAnalyzerDetail | null;
 };
 
 export function toReportIssue(row: ReportIssueRow): ReportIssue {
@@ -746,5 +841,6 @@ export function toReportIssue(row: ReportIssueRow): ReportIssue {
     recommendation: row.recommendation,
     evidence: row.evidence,
     feature: isFeatureKey(row.feature) ? row.feature : null,
+    analyzer: parseAnalyzerDetail(row.details_json),
   };
 }

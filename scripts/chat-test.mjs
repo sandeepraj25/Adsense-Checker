@@ -13,6 +13,7 @@ import { spawn } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 
 import { registerVerified, startMailSink } from "./lib/mail-sink.mjs";
+import { isolatedServerEnv } from "./lib/server-env.mjs";
 
 const dataDir = await mkdtemp(path.join(tmpdir(), "aec-chat-"));
 const port = 4800 + Math.floor(Math.random() * 150);
@@ -26,7 +27,7 @@ let serverLog = "";
 
 const server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "-p", String(port)], {
   cwd: process.cwd(),
-  env: {
+  env: isolatedServerEnv({
     ...process.env,
     NODE_ENV: "production",
     DATA_DIR: dataDir,
@@ -34,7 +35,7 @@ const server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "star
     ADMIN_EMAIL: admin.email,
     ADMIN_PASSWORD: admin.password,
     ...mail.env,
-  },
+  }),
   stdio: ["ignore", "pipe", "pipe"],
 });
 server.stdout.on("data", (d) => (serverLog += d));

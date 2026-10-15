@@ -1,6 +1,7 @@
 import { bit, many, one, run } from "@/lib/db";
 import { formatMoney } from "@/lib/money";
 import {
+  MAX_PAGES_PER_SCAN,
   FEATURE_KEYS,
   PLANS,
   PLAN_ORDER,
@@ -39,9 +40,16 @@ type PlanRow = {
   currency: string;
   /** Added in schema v6. NULL = not offered in USD. */
   usd_amount_cents?: number | null;
+  /** Added in schema v14. NULL = not offered yearly in that currency. */
+  yearly_amount_paise?: number | null;
+  yearly_usd_cents?: number | null;
+  yearly_enabled?: number;
+  yearly_badge?: string | null;
   billing_interval: string;
   site_limit: number;
   scan_limit: number;
+  /** Added in schema v15. NULL on a row nothing has set: the shipped default applies. */
+  pages_per_scan?: number | null;
   purchasable: number;
   featured: number;
   active: number;
@@ -99,9 +107,14 @@ function toPlan(row: PlanRow): PlanRecord | null {
     amountPaise: row.amount_paise,
     currency: "INR",
     usdAmountCents: row.id === "free" ? 0 : (row.usd_amount_cents ?? null),
+    yearlyAmountPaise: row.id === "free" ? null : (row.yearly_amount_paise ?? null),
+    yearlyUsdCents: row.id === "free" ? null : (row.yearly_usd_cents ?? null),
+    yearlyEnabled: row.id !== "free" && row.yearly_enabled === 1,
+    yearlyBadge: row.yearly_badge?.trim() || null,
     interval: "month",
     siteLimit: row.site_limit,
     scanLimit: row.scan_limit,
+    pagesPerScan: row.pages_per_scan && row.pages_per_scan > 0 ? row.pages_per_scan : shipped.pagesPerScan,
     purchasable: row.purchasable === 1,
     featured: row.featured === 1,
     active: row.active === 1,
@@ -189,8 +202,15 @@ export type PlanPatch = {
   amountPaise?: number;
   /** null withdraws the plan from USD checkout. */
   usdAmountCents?: number | null;
+  /** null withdraws the yearly price in that currency. */
+  yearlyAmountPaise?: number | null;
+  yearlyUsdCents?: number | null;
+  yearlyEnabled?: boolean;
+  /** "" or null removes the badge. */
+  yearlyBadge?: string | null;
   siteLimit?: number;
   scanLimit?: number;
+  pagesPerScan?: number;
   purchasable?: boolean;
   featured?: boolean;
   active?: boolean;
@@ -240,11 +260,33 @@ function invalid(patch: PlanPatch, id: PlanId): string | null {
   if (id !== "free" && patch.usdAmountCents === 0) {
     return "A paid plan can't be $0. Leave the USD price empty to stop offering it in dollars.";
   }
+  for (const [key, max, label] of [
+    ["yearlyAmountPaise", MAX_PRICE_PAISE * 12, "INR"],
+    ["yearlyUsdCents", MAX_PRICE_CENTS * 12, "USD"],
+  ] as const) {
+    const value = patch[key];
+    if (value === undefined || value === null) continue;
+    if (id === "free") return "The Free plan has no yearly price.";
+    if (!Number.isInteger(value) || value <= 0) {
+      return `The yearly ${label} price must be above zero, with at most two decimals. Leave it empty to not offer yearly billing in ${label}.`;
+    }
+    if (value > max) return `That yearly ${label} price looks like a mistake.`;
+  }
+  if (patch.yearlyEnabled === true && id === "free") return "The Free plan can't be sold yearly.";
+  if (patch.yearlyBadge !== undefined && patch.yearlyBadge !== null && patch.yearlyBadge.trim().length > 40) {
+    return "Keep the yearly badge to 40 characters or fewer.";
+  }
   if (patch.siteLimit !== undefined && (!Number.isInteger(patch.siteLimit) || patch.siteLimit < 1)) {
     return "Website limit must be at least 1.";
   }
   if (patch.scanLimit !== undefined && (!Number.isInteger(patch.scanLimit) || patch.scanLimit < 1)) {
     return "Monthly scan limit must be at least 1.";
+  }
+  if (
+    patch.pagesPerScan !== undefined &&
+    (!Number.isInteger(patch.pagesPerScan) || patch.pagesPerScan < 1 || patch.pagesPerScan > MAX_PAGES_PER_SCAN)
+  ) {
+    return `Pages per scan must be a whole number from 1 to ${MAX_PAGES_PER_SCAN}.`;
   }
   if (patch.name !== undefined && patch.name.trim().length === 0) {
     return "A plan needs a name.";
@@ -287,8 +329,13 @@ export function updatePlan(
     amountPaise: patch.amountPaise ?? before.amountPaise,
     usdAmountCents:
       patch.usdAmountCents === undefined ? before.usdAmountCents : patch.usdAmountCents,
+    yearlyAmountPaise: patch.yearlyAmountPaise === undefined ? before.yearlyAmountPaise : patch.yearlyAmountPaise,
+    yearlyUsdCents: patch.yearlyUsdCents === undefined ? before.yearlyUsdCents : patch.yearlyUsdCents,
+    yearlyEnabled: patch.yearlyEnabled ?? before.yearlyEnabled,
+    yearlyBadge: patch.yearlyBadge === undefined ? before.yearlyBadge : patch.yearlyBadge?.trim() || null,
     siteLimit: patch.siteLimit ?? before.siteLimit,
     scanLimit: patch.scanLimit ?? before.scanLimit,
+    pagesPerScan: patch.pagesPerScan ?? before.pagesPerScan,
     purchasable: patch.purchasable ?? before.purchasable,
     featured: patch.featured ?? before.featured,
     active: patch.active ?? before.active,
@@ -313,8 +360,9 @@ export function updatePlan(
   const now = Date.now();
   run(
     `UPDATE plans
-        SET name = ?, tagline = ?, amount_paise = ?, usd_amount_cents = ?, site_limit = ?,
-            scan_limit = ?, purchasable = ?, featured = ?, active = ?,
+        SET name = ?, tagline = ?, amount_paise = ?, usd_amount_cents = ?,
+            yearly_amount_paise = ?, yearly_usd_cents = ?, yearly_enabled = ?, yearly_badge = ?, site_limit = ?,
+            scan_limit = ?, pages_per_scan = ?, purchasable = ?, featured = ?, active = ?,
             features_json = ?, showcase_json = ?, excluded_json = ?,
             highlights_json = ?, updated_at = ?, updated_by = ?
       WHERE id = ?`,
@@ -323,8 +371,13 @@ export function updatePlan(
       next.tagline,
       next.amountPaise,
       next.id === "free" ? 0 : next.usdAmountCents,
+      next.id === "free" ? null : next.yearlyAmountPaise,
+      next.id === "free" ? null : next.yearlyUsdCents,
+      bit(next.id !== "free" && next.yearlyEnabled),
+      next.yearlyBadge,
       next.siteLimit,
       next.scanLimit,
+      next.pagesPerScan,
       bit(next.purchasable),
       bit(next.featured),
       bit(next.active),
@@ -360,11 +413,23 @@ export function describeChanges(before: Plan, after: Plan): string[] {
     const usd = (cents: number | null) => (cents === null ? "not offered" : formatMoney(cents, "USD"));
     notes.push(`USD price ${usd(before.usdAmountCents)} → ${usd(after.usdAmountCents)} / month`);
   }
+  const yearly = (minor: number | null, currency: "INR" | "USD") => (minor === null ? "not offered" : formatMoney(minor, currency));
+  if (before.yearlyAmountPaise !== after.yearlyAmountPaise) {
+    notes.push(`yearly INR price ${yearly(before.yearlyAmountPaise, "INR")} → ${yearly(after.yearlyAmountPaise, "INR")} / year`);
+  }
+  if (before.yearlyUsdCents !== after.yearlyUsdCents) {
+    notes.push(`yearly USD price ${yearly(before.yearlyUsdCents, "USD")} → ${yearly(after.yearlyUsdCents, "USD")} / year`);
+  }
+  if (before.yearlyEnabled !== after.yearlyEnabled) notes.push(after.yearlyEnabled ? "yearly billing on" : "yearly billing off");
+  if (before.yearlyBadge !== after.yearlyBadge) notes.push(`yearly badge ${after.yearlyBadge ? `"${after.yearlyBadge}"` : "removed"}`);
   if (before.siteLimit !== after.siteLimit) {
     notes.push(`websites ${before.siteLimit} → ${after.siteLimit}`);
   }
   if (before.scanLimit !== after.scanLimit) {
     notes.push(`scans/month ${before.scanLimit} → ${after.scanLimit}`);
+  }
+  if (before.pagesPerScan !== after.pagesPerScan) {
+    notes.push(`pages/scan ${before.pagesPerScan} → ${after.pagesPerScan}`);
   }
   if (before.purchasable !== after.purchasable) {
     notes.push(after.purchasable ? "made purchasable" : "made unpurchasable");
@@ -407,6 +472,7 @@ export function resetPlan(
       amountPaise: shipped.amountPaise,
       siteLimit: shipped.siteLimit,
       scanLimit: shipped.scanLimit,
+      pagesPerScan: shipped.pagesPerScan,
       purchasable: shipped.purchasable,
       featured: shipped.featured,
       active: shipped.active,

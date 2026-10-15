@@ -32,6 +32,7 @@ export type EditablePlan = {
   priceLabel: string;
   siteLimit: number;
   scanLimit: number;
+  pagesPerScan: number;
   active: boolean;
   purchasable: boolean;
   featured: boolean;
@@ -58,11 +59,14 @@ export function PlanEditor({
   const [tagline, setTagline] = useState(plan.tagline);
   const [siteLimit, setSiteLimit] = useState(String(plan.siteLimit));
   const [scanLimit, setScanLimit] = useState(String(plan.scanLimit));
+  const [pagesPerScan, setPagesPerScan] = useState(String(plan.pagesPerScan));
   const [active, setActive] = useState(plan.active);
   const [purchasable, setPurchasable] = useState(plan.purchasable);
   const [featured, setFeatured] = useState(plan.featured);
   const [features, setFeatures] = useState<string[]>(plan.features);
   const [highlights, setHighlights] = useState(plan.highlights.join("\n"));
+  const [revokeFromCurrent, setRevokeFromCurrent] = useState(false);
+  const removing = plan.features.filter((key) => !features.includes(key));
 
   const isFree = plan.id === "free";
 
@@ -97,11 +101,13 @@ export function PlanEditor({
           tagline,
           siteLimit,
           scanLimit,
+          pagesPerScan,
           active,
           ...(isFree ? {} : { purchasable }),
           featured,
           features,
           showcase,
+          ...(removing.length > 0 && revokeFromCurrent ? { revokeFromCurrent: true } : {}),
           highlights: highlights
             .split("\n")
             .map((line) => line.trim())
@@ -113,6 +119,7 @@ export function PlanEditor({
         ok?: boolean;
         message?: string;
         changed?: string[];
+        revokedFrom?: number;
       };
       if (!res.ok || !payload.ok) {
         error("Not saved", payload.message ?? "The plan was not changed.");
@@ -122,8 +129,14 @@ export function PlanEditor({
         payload.changed && payload.changed.length > 0
           ? `${name} updated`
           : "Nothing changed",
-        payload.changed?.join("; "),
+        [
+          payload.changed?.join("; "),
+          payload.revokedFrom ? `Removed from ${payload.revokedFrom} current subscription(s).` : "",
+        ]
+          .filter(Boolean)
+          .join(" "),
       );
+      setRevokeFromCurrent(false);
       router.refresh();
     } catch {
       error("Could not reach the server", "The plan was not changed.");
@@ -219,7 +232,7 @@ export function PlanEditor({
           hint="One line under the plan name on the pricing card."
         />
 
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-3">
           <Field
             label="Websites allowed"
             type="number"
@@ -233,7 +246,16 @@ export function PlanEditor({
             min={1}
             value={scanLimit}
             onChange={(event) => setScanLimit(event.target.value)}
-            hint="Resets on the renewal date. Not a lifetime allowance."
+            hint="Resets every month, yearly plans included. Not a lifetime allowance."
+          />
+          <Field
+            label="Pages per scan"
+            type="number"
+            min={1}
+            max={500}
+            value={pagesPerScan}
+            onChange={(event) => setPagesPerScan(event.target.value)}
+            hint="Content pages read per scan, homepage included. Policy pages are extra."
           />
         </div>
 
@@ -278,9 +300,9 @@ export function PlanEditor({
           </p>
           <p className="mt-1 text-[0.75rem] leading-snug text-cloud-600">
             This is the enforced set, not a list of claims. Switching one on
-            grants it to new subscriptions on this plan and makes the analysis
-            engine run it; switching one off stops the work and locks the
-            section in the report.
+            gives it to everyone on this plan straight away. Switching one off
+            stops it for new subscriptions; people who already paid keep it
+            until their current period ends, unless you also remove it below.
           </p>
 
           <ul className="mt-3 grid gap-1.5 sm:grid-cols-2">
@@ -328,6 +350,22 @@ export function PlanEditor({
               );
             })}
           </ul>
+
+          {removing.length > 0 ? (
+            <label className="mt-3 flex items-start gap-2.5 rounded-xl border border-amber-400/25 bg-amber-400/[0.06] px-3 py-2.5 text-[0.8125rem] leading-snug text-cloud-200">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={revokeFromCurrent}
+                onChange={(event) => setRevokeFromCurrent(event.target.checked)}
+              />
+              <span>
+                Also remove {removing.length === 1 ? "this feature" : `these ${removing.length} features`} from
+                current subscribers on {plan.name} now. Leave unticked to let them keep it until their paid
+                period ends. This is recorded in the admin log.
+              </span>
+            </label>
+          ) : null}
         </div>
       </div>
     </section>

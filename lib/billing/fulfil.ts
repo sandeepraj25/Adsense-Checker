@@ -114,6 +114,8 @@ export function fulfilPayment(input: {
       paymentId: input.gatewayPaymentId,
       orderId: input.orderId,
       gateway: payment.gateway,
+      // The cycle on our own order row — monthly or the twelve months paid for.
+      billingCycle: payment.billingCycle,
     });
 
     const claimed = markPaymentPaid({
@@ -144,6 +146,7 @@ export function fulfilPayment(input: {
       currency: payment.currency,
       periodStart: subscription.startsAt,
       periodEnd: subscription.expiresAt,
+      billingCycle: payment.billingCycle,
     });
 
     attachInvoiceToSubscription(subscription.id, invoice.id);

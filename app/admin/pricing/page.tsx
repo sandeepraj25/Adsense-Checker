@@ -11,6 +11,9 @@ import { checkoutOptionsFor } from "@/lib/payments";
 import { listPlans } from "@/lib/plan-catalogue";
 import { currencyReadiness } from "@/lib/currency-readiness";
 import { siteCurrency } from "@/lib/site-currency";
+import { yearlyBillingSetting } from "@/lib/billing/yearly-settings";
+import { yearlyOffer } from "@/lib/billing/offer";
+import { YearlyBillingSwitch } from "@/components/admin/YearlyBillingSwitch";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +39,10 @@ export default async function AdminPricingPage() {
     name: plan.name,
     inrMinor: plan.amountPaise,
     usdMinor: plan.usdAmountCents,
+    yearlyInrMinor: plan.yearlyAmountPaise,
+    yearlyUsdMinor: plan.yearlyUsdCents,
+    yearlyEnabled: plan.yearlyEnabled,
+    yearlyBadge: plan.yearlyBadge,
     interval: "Monthly",
     status: !plan.active
       ? { label: "Hidden", tone: "warn" }
@@ -54,6 +61,9 @@ export default async function AdminPricingPage() {
     isFree: plan.id === "free",
   }));
 
+  const yearly = yearlyBillingSetting();
+  const yearlyReady = plans.filter((plan) => yearlyOffer(plan, siteCurrency(), true) !== null).length;
+
   const reach = CURRENCIES.map((currency) => ({
     currency,
     gateways: checkoutOptionsFor(currency).map((option) => option.label),
@@ -71,7 +81,7 @@ export default async function AdminPricingPage() {
       <PageHeading
         eyebrow="Administration"
         title="Pricing"
-        lede="Set each plan's monthly price in Indian rupees and in US dollars. The two are separate — changing one never changes the other, and nothing is converted."
+        lede="Set each plan's monthly and yearly prices in Indian rupees and in US dollars. Each price is separate — changing one never changes another, and nothing is converted."
       />
 
       {(() => {
@@ -98,10 +108,23 @@ export default async function AdminPricingPage() {
         );
       })()}
 
+      <Panel
+        title="Yearly billing"
+        description="When on, the pricing page shows a Monthly / Yearly switch for plans with a yearly price below. Off returns the site to monthly-only straight away; yearly subscriptions already bought keep their twelve months."
+        action={<YearlyBillingSwitch enabled={yearly.enabled} />}
+      >
+        <p className="text-[0.875rem] text-cloud-300">
+          {yearly.enabled
+            ? `On${yearly.updatedBy ? ` — turned on ${yearly.updatedAt ? formatDateTime(yearly.updatedAt) : ""} by ${yearly.updatedBy}` : ""}. ${yearlyReady} plan${yearlyReady === 1 ? " is" : "s are"} offered yearly in ${siteCurrency()}.`
+            : `Off — customers see monthly prices only.${yearlyReady ? ` ${yearlyReady} plan${yearlyReady === 1 ? " has" : "s have"} a yearly price ready.` : ""}`}{" "}
+          The discount is worked out as (1 − yearly ÷ (monthly × 12)) × 100, rounded down.
+        </p>
+      </Panel>
+
       <PricingTable rows={rows} />
 
       <p className="text-[0.875rem] leading-relaxed text-cloud-400">
-        A new price applies to purchases from the moment it's saved. Subscriptions, payments and
+        A new price applies to purchases from the moment it&apos;s saved. Subscriptions, payments and
         invoices already made keep the amount and currency they were paid in. Features and limits
         are edited on{" "}
         <Link href="/admin/plans" className="font-medium text-azure-600 hover:underline">

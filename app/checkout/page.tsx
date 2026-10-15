@@ -25,7 +25,10 @@ import { CURRENCY_META, formatMoney, type Currency } from "@/lib/money";
 import { siteCurrency } from "@/lib/site-currency";
 import { checkoutOptionsFor } from "@/lib/payments";
 import { getPlan } from "@/lib/plan-catalogue";
-import { BILLING_PERIOD_DAYS, FEATURE_META, planPrice } from "@/lib/plans";
+import { FEATURE_META, planPrice } from "@/lib/plans";
+import { cycleLabel, type BillingCycle } from "@/lib/billing/cycle";
+import { yearlyOffer } from "@/lib/billing/offer";
+import { yearlyBillingEnabled } from "@/lib/billing/yearly-settings";
 
 export const metadata: Metadata = {
   title: "Checkout",
@@ -51,9 +54,11 @@ function countryOptions(): CountryOption[] {
 export default async function CheckoutPage({
   searchParams,
 }: {
-  searchParams: Promise<{ plan?: string; url?: string }>;
+  searchParams: Promise<{ plan?: string; url?: string; cycle?: string }>;
 }) {
-  const { plan: planParam, url } = await searchParams;
+  const { plan: planParam, url, cycle: cycleParam } = await searchParams;
+  // Monthly unless the link asks for yearly; the price for it is read below.
+  const cycle: BillingCycle = cycleParam === "yearly" ? "yearly" : "monthly";
   // middleware.ts already sent anonymous visitors to log in with this exact
   // URL as `next`; this is the authoritative check.
   const user = await requireUser();
@@ -79,7 +84,22 @@ export default async function CheckoutPage({
     );
   }
 
-  const amount = planPrice(plan, currency);
+  const yearlyOn = yearlyBillingEnabled();
+  const offer = yearlyOffer(plan, currency, yearlyOn);
+  if (cycle === "yearly" && !offer) {
+    const params = new URLSearchParams({ plan: plan.id });
+    if (carryUrl) params.set("url", carryUrl);
+    return (
+      <Shell>
+        <Notice
+          title={`${plan.name} isn't offered yearly right now`}
+          body={`Yearly billing isn't available for the ${plan.name} plan at the moment. Nothing has been charged — you can buy it monthly instead.`}
+          action={{ href: `/checkout?${params.toString()}`, label: "Continue with monthly" }}
+        />
+      </Shell>
+    );
+  }
+  const amount = cycle === "yearly" ? offer!.price : planPrice(plan, currency);
 
   if (amount === null) {
     return (
@@ -96,11 +116,18 @@ export default async function CheckoutPage({
   expireStaleSubscriptions();
   const current = getActiveSubscription(user.id);
   if (current && current.planId === plan.id) {
+    // Paying again would replace the period already paid for, so a change
+    // of cycle on the same plan is scheduled for renewal instead.
+    const switching = cycle !== current.billingCycle;
     return (
       <Shell>
         <Notice
           title={`${plan.name} is already your plan`}
-          body={`Your ${plan.name} plan is active until ${formatDate(current.expiresAt)}. There's nothing to pay for now.`}
+          body={
+            switching
+              ? `Your ${plan.name} plan is paid ${current.billingCycle === "yearly" ? "yearly" : "monthly"} until ${formatDate(current.expiresAt)}. To move to ${cycle} billing, schedule it on your billing page — it applies when you renew, and nothing is charged now.`
+              : `Your ${plan.name} plan is active until ${formatDate(current.expiresAt)}. There's nothing to pay for now.`
+          }
           action={{ href: "/dashboard/billing", label: "Go to billing" }}
         />
       </Shell>
@@ -123,7 +150,8 @@ export default async function CheckoutPage({
 
   const checks = checkCountFor(plan.features);
   const price = formatMoney(amount, currency);
-  const intervalLabel = plan.interval === "month" ? "Monthly" : plan.interval;
+  const intervalLabel = cycleLabel(cycle);
+  const accessLabel = cycle === "yearly" ? "12 months of access" : "1 month of access";
 
   const summary = (
     <section aria-labelledby="summary-heading" className="rounded-xl border border-ink-700 bg-white p-5 sm:p-6">
@@ -135,8 +163,15 @@ export default async function CheckoutPage({
         <div className="min-w-0">
           <p className="text-[1.125rem] font-semibold text-cloud-50">{plan.name} plan</p>
           <p className="mt-0.5 text-[0.875rem] text-cloud-400">
-            {intervalLabel} · {BILLING_PERIOD_DAYS} days of access
+            {intervalLabel} · {accessLabel}
           </p>
+          {cycle === "yearly" && offer ? (
+            <p className="mt-1 text-[0.8125rem] text-cloud-300">
+              ≈ {formatMoney(offer.perMonth, currency)} per month
+              {offer.discount ? ` · save ${offer.discount}% vs monthly` : ""}
+              {offer.badge ? ` · ${offer.badge}` : ""}
+            </p>
+          ) : null}
         </div>
         <p className="shrink-0 text-[1.125rem] font-semibold tabular-nums text-cloud-50">{price}</p>
       </div>
@@ -186,9 +221,10 @@ export default async function CheckoutPage({
       <div className="mt-4 rounded-xl bg-ink-900 px-4 py-3 text-[0.8125rem] leading-relaxed text-cloud-300">
         <p className="font-medium text-cloud-50">How billing works</p>
         <p className="mt-1">
-          This is a one-time payment of {price} for {BILLING_PERIOD_DAYS} days of {plan.name}, charged
+          This is a one-time payment of {price} for {accessLabel.replace(" of access", "")} of {plan.name}, charged
           in {currency}. You won&apos;t be charged again automatically. When the period ends the plan expires, and you can buy it again
           from Billing whenever you need it.
+          {cycle === "yearly" ? " Your scan allowance still resets every month." : ""}
         </p>
       </div>
 
@@ -203,13 +239,13 @@ export default async function CheckoutPage({
         </h1>
         <p className="mt-2 text-[0.9375rem] text-cloud-400">
           {current
-            ? `You're switching from ${current.planName} to ${plan.name}.`
-            : `You're buying the ${plan.name} plan.`}
+            ? `You're switching from ${current.planName} to ${plan.name}${cycle === "yearly" ? ", billed yearly" : ""}.`
+            : `You're buying the ${plan.name} plan${cycle === "yearly" ? ", billed yearly" : ""}.`}
         </p>
       </div>
 
       <CheckoutForm
-        plan={{ id: plan.id, name: plan.name, priceLabel: price, currency, amountMinor: amount }}
+        plan={{ id: plan.id, name: plan.name, priceLabel: price, currency, amountMinor: amount, billingCycle: cycle }}
         options={options}
         countries={countryOptions()}
         prefill={prefill}

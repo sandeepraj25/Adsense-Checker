@@ -230,7 +230,7 @@ export function ChatWidget() {
           open ? "Close support chat" : `Open support chat${unread ? ` — ${unread} unread ${unread === 1 ? "reply" : "replies"}` : ""}`
         }
         className={cn(
-          "fixed right-4 bottom-4 z-40 grid size-14 place-items-center rounded-full bg-azure-500 text-white sm:right-6 sm:bottom-6",
+          "no-print fixed right-4 bottom-4 z-40 grid size-14 place-items-center rounded-full bg-azure-500 text-white sm:right-6 sm:bottom-6",
           "shadow-[0_8px_24px_-8px_rgba(79,70,229,0.6)] transition-colors hover:bg-azure-600",
           "focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-azure-500",
           open && "max-sm:hidden",
@@ -253,7 +253,7 @@ export function ChatWidget() {
           role="dialog"
           aria-label="Support chat"
           className={cn(
-            "fixed z-50 flex flex-col overflow-hidden border border-ink-700 bg-white",
+            "no-print fixed z-50 flex flex-col overflow-hidden border border-ink-700 bg-white",
             "inset-x-0 bottom-0 h-[85dvh] rounded-t-xl",
             "sm:inset-x-auto sm:right-6 sm:bottom-24 sm:h-[34rem] sm:max-h-[calc(100dvh-8rem)] sm:w-[23rem] sm:rounded-xl",
             "shadow-[0_24px_48px_-16px_rgba(24,24,27,0.25)]",

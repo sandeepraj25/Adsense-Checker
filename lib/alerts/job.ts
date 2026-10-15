@@ -2,6 +2,7 @@ import { claimAbandoned, purgeOldCheckouts } from "./checkout";
 import { notifyAbandoned, processDue, scrubOldPayloads } from "./notify";
 import { graceMinutes, recordJobRun } from "./settings";
 import { purgeAnalyticsIfDue } from "@/lib/analytics/store";
+import type { JobTrigger } from "@/lib/scheduler";
 
 /**
  * One pass of the alert job. Safe to run from several places at once —
@@ -14,9 +15,11 @@ import { purgeAnalyticsIfDue } from "@/lib/analytics/store";
  *   3. retention: stale checkout records and old alert bodies removed,
  *      and analytics past its retention period (at most every 6 hours)
  *
- * `now` is a parameter so tests can move the clock instead of waiting.
+ * `now` is a parameter so tests can move the clock instead of waiting;
+ * `trigger` records who started the run (the scheduler endpoint, the
+ * server's background tick, or an admin), shown on the admin page.
  */
-export async function runAlertJob(now = Date.now()): Promise<{
+export async function runAlertJob(now = Date.now(), trigger: JobTrigger = "admin"): Promise<{
   abandoned: number;
   delivered: Record<string, number>;
   purged: number;
@@ -31,7 +34,7 @@ export async function runAlertJob(now = Date.now()): Promise<{
   const summary = `${claimed.length} abandoned checkout${claimed.length === 1 ? "" : "s"} found, ${sent} alert${sent === 1 ? "" : "s"} sent${
     delivered.retry ? `, ${delivered.retry} to retry` : ""
   }${delivered.failed ? `, ${delivered.failed} failed` : ""}${delivered.skipped ? `, ${delivered.skipped} skipped (no alert email)` : ""}`;
-  recordJobRun(summary, now);
+  recordJobRun(summary, now, trigger);
   return { abandoned: claimed.length, delivered, purged, summary };
 }
 
@@ -45,7 +48,7 @@ export async function runAlertJobThrottled(minIntervalMs = 60_000): Promise<void
   globalRef.__alertJobRunning = true;
   globalRef.__alertJobLast = now;
   try {
-    await runAlertJob(now);
+    await runAlertJob(now, "background");
   } catch (error) {
     console.error("[alerts] job failed", error instanceof Error ? error.message : error);
   } finally {

@@ -12,6 +12,7 @@ import {
 } from "@/lib/env";
 import { PLAN_LIST } from "@/lib/plans";
 import { validatePassword } from "@/lib/validate";
+import { seedFeatureMappings } from "./feature-seeds";
 import { MIGRATIONS } from "./schema";
 
 /**
@@ -80,8 +81,8 @@ function seedPlans(db: DatabaseSync): void {
                         billing_interval, site_limit, scan_limit, purchasable,
                         featured, active, features_json, showcase_json,
                         excluded_json, highlights_json, sort_order, updated_at,
-                        updated_by, usd_amount_cents)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+                        updated_by, usd_amount_cents, pages_per_scan)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
      ON CONFLICT(id) DO NOTHING`,
   );
   const now = Date.now();
@@ -105,6 +106,7 @@ function seedPlans(db: DatabaseSync): void {
       index,
       now,
       plan.usdAmountCents,
+      plan.pagesPerScan,
     );
   });
 }
@@ -221,6 +223,7 @@ function open(): DatabaseSync {
 
   migrate(db);
   seedPlans(db);
+  seedFeatureMappings(db);
   seedGateways(db);
   seedAdmin(db);
   return db;

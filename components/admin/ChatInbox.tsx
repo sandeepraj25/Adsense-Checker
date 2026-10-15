@@ -22,6 +22,7 @@ type Item = {
   status: "open" | "resolved";
   assignedAgent: { id: string; name: string } | null;
   customerOnline: boolean;
+  priority?: boolean;
 };
 
 type Message = {
@@ -348,6 +349,7 @@ export function ChatInbox({
                       </span>
                       <span className="mt-1 flex flex-wrap gap-1.5">
                         <Badge tone={item.status === "open" ? "brand" : "neutral"}>{item.status === "open" ? "Open" : "Resolved"}</Badge>
+                        {item.priority ? <Badge tone="warn">Priority</Badge> : null}
                         {item.isGuest ? <Badge>Guest</Badge> : null}
                         {item.assignedAgent ? <Badge>{item.assignedAgent.name}</Badge> : null}
                       </span>

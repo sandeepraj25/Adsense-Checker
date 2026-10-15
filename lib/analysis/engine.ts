@@ -1,10 +1,22 @@
-import { ANALYSIS_MAX_PAGES } from "@/lib/env";
+import { ANALYSIS_DEADLINE_MS, ANALYSIS_MAX_DEADLINE_MS, ANALYSIS_MAX_PAGES } from "@/lib/env";
+import { MAX_PAGES_PER_SCAN } from "@/lib/plans";
 import type { PageScore, ReportMetrics, Verdict } from "@/lib/db/types";
 import { FEATURE_META, type FeatureKey } from "@/lib/plans";
 
-import { checkCountFor, runChecks, type PolicyKind, type SiteSnapshot } from "./checks";
-import { fetchGuarded, probe } from "./fetcher";
-import { analysePage, registrable, type PageAnalysis } from "./html";
+import {
+  checkCountFor,
+  describeError,
+  runChecks,
+  type PolicyKind,
+  type SignalName,
+  type SiteSnapshot,
+} from "./checks";
+import { ANALYZERS } from "./analyzers";
+import { classifyNiche } from "./niche";
+import type { AnalyzerDef } from "./analyzers/contract";
+import { runAnalyzers, type AnalyzerRun } from "./analyzers/runner";
+import { Crawl } from "./crawler";
+import { registrable, type PageAnalysis } from "./html";
 import {
   adDensity,
   analyseStructure,
@@ -56,7 +68,13 @@ const POLICY_PATTERNS: Array<{ kind: PolicyKind; path: RegExp; text: RegExp }> =
   { kind: "cookies", path: /cookie/i, text: /\bcookie\b/i },
 ];
 
-const CONCURRENCY = 3;
+/**
+ * Requests in flight at once across the whole scan (pages, files and link
+ * checks together). Before the shared crawler this was 3 pages plus the
+ * side requests running beside them; 6 overall keeps the same pace while
+ * putting a hard ceiling on it.
+ */
+const CONCURRENCY = 6;
 
 async function inBatches<T, R>(
   items: T[],
@@ -71,34 +89,134 @@ async function inBatches<T, R>(
   return results;
 }
 
-type ReadOutcome =
-  | { kind: "page"; page: PageAnalysis }
-  | { kind: "error"; url: string; status: number };
+/**
+ * A web page where a plain-text file should be. Many hosts answer a
+ * missing /ads.txt or /robots.txt with their HTML "not found" page and a
+ * 200 status; reading that as the file would report a record that does
+ * not exist.
+ */
+function looksLikeHtml(contentType: string, body: string): boolean {
+  if (/text\/html|application\/xhtml/i.test(contentType)) return true;
+  return /^\s*(?:<!doctype html|<html|<head|<body)/i.test(body.slice(0, 512));
+}
 
-async function readPage(url: string): Promise<ReadOutcome> {
+/**
+ * The scan's time limit for a page allowance: the standard limit for up to
+ * six pages, plus 0.6 s per page beyond that, never above
+ * ANALYSIS_MAX_DEADLINE_MS (4 minutes by default). Scans run as background
+ * jobs, so a long one does not hold a request open.
+ */
+export function scanDeadlineMs(pages: number): number {
+  const extra = Math.max(0, pages - 6) * 600;
+  return Math.max(ANALYSIS_DEADLINE_MS, Math.min(ANALYSIS_MAX_DEADLINE_MS, ANALYSIS_DEADLINE_MS + extra));
+}
+
+const SKIP_EXTENSIONS = /\.(?:pdf|jpe?g|png|gif|webp|svg|ico|zip|rar|gz|mp3|mp4|mov|avi|webm|css|js|json|xml|rss|txt|docx?|xlsx?|pptx?|exe|dmg|apk)$/i;
+const SKIP_PATHS = /\/(?:wp-admin|wp-login|wp-json|feed|cart|checkout|login|logout|register|signin|signup|my-account|search)(?:\/|$)/i;
+
+/** An internal URL worth reading as a content page. */
+function contentCandidate(raw: string, host: string): string | null {
   try {
-    const result = await fetchGuarded(url);
-    if (!result.ok) {
-      return { kind: "error", url: result.finalUrl, status: result.status };
-    }
-    if (!/html|xml|text\/plain/i.test(result.contentType) && result.body.length === 0) {
-      return { kind: "error", url: result.finalUrl, status: result.status };
-    }
-    return {
-      kind: "page",
-      page: analysePage({
-        url: result.finalUrl,
-        status: result.status,
-        ok: result.ok,
-        html: result.body,
-        bytes: result.bytes,
-        ms: result.ms,
-      }),
-    };
+    const url = new URL(raw);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    if (registrable(url.hostname) !== host) return null;
+    if (SKIP_EXTENSIONS.test(url.pathname) || SKIP_PATHS.test(url.pathname)) return null;
+    if ([...url.searchParams.keys()].some((key) => /^(?:replytocom|share|print|s|q|add-to-cart)$/i.test(key))) return null;
+    url.hash = "";
+    return url.toString();
   } catch {
-    return { kind: "error", url, status: 0 };
+    return null;
   }
 }
+
+/**
+ * Reads up to `budget` content pages beyond the homepage: its links first,
+ * then the links of those pages (up to three levels), then the sitemap.
+ * Works in small batches and stops starting new reads once only a quarter
+ * of the time limit (at least 15 s) is left, so the checks and analyzers
+ * still have time to run on what was read.
+ */
+async function discoverContent(input: {
+  crawl: Crawl;
+  home: PageAnalysis;
+  origin: string;
+  host: string;
+  budget: number;
+  exclude: Set<string>;
+  deadlineMs: number;
+}): Promise<ReadOutcome[]> {
+  const { crawl, home, host, budget } = input;
+  if (budget <= 0) return [];
+  // Time kept back for the checks and analyzers: a quarter of the limit,
+  // at least 15 s, but never more than half of it.
+  const reserve = Math.min(input.deadlineMs * 0.5, Math.max(15_000, input.deadlineMs * 0.25));
+  const seen = new Set<string>([...input.exclude, home.url]);
+  const results: ReadOutcome[] = [];
+  let started = 0;
+  const enough = () => started >= budget || crawl.clock.remaining() <= reserve;
+
+  const take = (urls: Array<string | null | undefined>): string[] => {
+    const out: string[] = [];
+    for (const raw of urls) {
+      const url = raw ? contentCandidate(raw, host) : null;
+      if (!url || seen.has(url)) continue;
+      seen.add(url);
+      out.push(url);
+    }
+    return out;
+  };
+
+  let frontier = take(home.links.filter((link) => link.internal).map((link) => link.absolute));
+  for (let depth = 0; depth < 3 && frontier.length > 0 && !enough(); depth += 1) {
+    const next: string[] = [];
+    for (let i = 0; i < frontier.length && !enough(); ) {
+      const batch = frontier.slice(i, i + Math.min(12, budget - started));
+      i += batch.length;
+      started += batch.length;
+      const outcomes = await Promise.all(
+        batch.map(async (url) => {
+          const outcome = await crawl.page(url);
+          if (outcome.kind === "page") next.push(...take(outcome.page.analysis.links.filter((l) => l.internal).map((l) => l.absolute)));
+          return outcome;
+        }),
+      );
+      for (const outcome of outcomes) {
+        if (outcome.kind === "page") results.push({ kind: "page", page: outcome.page.analysis });
+        else if (outcome.kind === "error") results.push({ kind: "error", url: outcome.url, status: outcome.status });
+        else started -= 1; // skipped (robots, budget, time) does not use the allowance
+      }
+    }
+    frontier = next;
+  }
+
+  if (!enough()) {
+    const sitemap = await readSitemap([`${input.origin}/sitemap.xml`, `${input.origin}/sitemap_index.xml`], host, crawl);
+    const extra = take(sitemap?.urls ?? []);
+    for (let i = 0; i < extra.length && !enough(); ) {
+      const batch = extra.slice(i, i + Math.min(12, budget - started));
+      i += batch.length;
+      started += batch.length;
+      for (const outcome of await Promise.all(batch.map((url) => crawl.page(url)))) {
+        if (outcome.kind === "page") results.push({ kind: "page", page: outcome.page.analysis });
+        else if (outcome.kind === "error") results.push({ kind: "error", url: outcome.url, status: outcome.status });
+        else started -= 1;
+      }
+    }
+  }
+  return results;
+}
+
+async function readPage(url: string, crawl: Crawl, options: { counted?: boolean } = {}): Promise<ReadOutcome> {
+  const outcome = await crawl.page(url, options);
+  if (outcome.kind === "page") return { kind: "page", page: outcome.page.analysis };
+  if (outcome.kind === "error") return { kind: "error", url: outcome.url, status: outcome.status };
+  return { kind: "skipped", url: outcome.url };
+}
+
+type ReadOutcome =
+  | { kind: "page"; page: PageAnalysis }
+  | { kind: "error"; url: string; status: number }
+  | { kind: "skipped"; url: string };
 
 function parseRobots(text: string): {
   found: boolean;
@@ -172,7 +290,9 @@ function scoreFindings(findings: Finding[]): {
   criticalCount: number;
 } {
   const groups = CATEGORY_KEYS.map((key) => {
-    const group = findings.filter((finding) => finding.category === key);
+    // A check that could not run says nothing about the site, so it is
+    // neither credit nor deduction: it is left out of the score entirely.
+    const group = findings.filter((finding) => finding.category === key && finding.status !== "error");
     return {
       key,
       group,
@@ -294,7 +414,7 @@ const RISK_SOURCES: Array<{ ids: string[]; label: string; why: string }> = [
   {
     ids: ["pvl-privacy", "pvl-privacy-ads"],
     label: "Privacy policy",
-    why: "A compliant privacy policy that mentions advertising cookies is a stated requirement, and its absence is the single most common reason an application is declined.",
+    why: "A compliant privacy policy that mentions advertising cookies is a stated requirement, and its absence is a commonly cited reason an application is declined.",
   },
   {
     ids: ["cnt-depth", "cnt-thin", "cnt-breadth"],
@@ -375,9 +495,9 @@ function detectRisks(findings: Finding[]): PolicyRisk[] {
  * generated prose or a generic tip.
  */
 function buildRecommendations(findings: Finding[]): Recommendation[] {
-  const severity = { fail: 0, warn: 1, pass: 2 } as const;
+  const severity = { fail: 0, warn: 1, pass: 2, error: 3 } as const;
   const actionable = findings
-    .filter((finding) => finding.status !== "pass" && finding.fix.length > 0)
+    .filter((finding) => finding.status !== "pass" && finding.status !== "error" && finding.fix.length > 0)
     .sort((a, b) => {
       const bySeverity = severity[a.status] - severity[b.status];
       if (bySeverity !== 0) return bySeverity;
@@ -418,7 +538,7 @@ export type EngineStage =
  * nowhere. Each candidate is still screened by the guard, so widening the
  * attempts widens reach without widening what we are willing to dial.
  */
-async function resolveHome(target: Target): Promise<{ page: PageAnalysis; https: boolean }> {
+async function resolveHome(target: Target, crawl: Crawl): Promise<{ page: PageAnalysis; https: boolean }> {
   const candidates: string[] = [];
   for (const host of hostAlternatives(target.host)) {
     const secure = new URL(target.url.toString());
@@ -437,7 +557,7 @@ async function resolveHome(target: Target): Promise<{ page: PageAnalysis; https:
 
   for (const candidate of candidates) {
     try {
-      const result = await fetchGuarded(candidate);
+      const result = await crawl.homeCandidate(candidate);
       // A 4xx/5xx still tells us the host is alive; only give up on a
       // status if another spelling might do better.
       if (!result.ok && result.status >= 400 && candidate !== candidates[candidates.length - 1]) {
@@ -447,15 +567,9 @@ async function resolveHome(target: Target): Promise<{ page: PageAnalysis; https:
         );
         continue;
       }
+      crawl.adoptHome(result);
       return {
-        page: analysePage({
-          url: result.finalUrl,
-          status: result.status,
-          ok: result.ok,
-          html: result.body,
-          bytes: result.bytes,
-          ms: result.ms,
-        }),
+        page: result.analysis,
         https: new URL(result.finalUrl).protocol === "https:",
       };
     } catch (error) {
@@ -483,6 +597,16 @@ async function resolveHome(target: Target): Promise<{ page: PageAnalysis; https:
 export async function runAnalysis(
   rawInput: string,
   features: readonly FeatureKey[],
+  options: {
+    /** The analyzers to offer the gate. Defaults to the registry; tests pass their own. */
+    analyzers?: readonly AnalyzerDef[];
+    /**
+     * The plan's pages per scan (Phase 5): content pages read, homepage
+     * included; the policy pages are read in addition. Without it the
+     * pre-Phase-5 budget applies (2–6 pages by plan features).
+     */
+    pageLimit?: number;
+  } = {},
 ): Promise<AnalysisOutcome> {
   const parsed = parseTarget(rawInput);
   if (!parsed.ok) {
@@ -494,7 +618,25 @@ export async function runAnalysis(
   const active = new Set<FeatureKey>(features);
   const has = (feature: FeatureKey) => active.has(feature);
 
-  const { page: home, https } = await resolveHome(target);
+  // The budget is the plan's, not a constant. Free reads the homepage and
+  // little else; Basic reads enough to find the policy pages; Pro's deep
+  // page check is precisely the promise of a wider crawl, so it gets one.
+  const ceiling = Math.max(2, ANALYSIS_MAX_PAGES);
+  const planLimited = typeof options.pageLimit === "number" && Number.isFinite(options.pageLimit);
+  const allowance = planLimited
+    ? Math.max(1, Math.min(MAX_PAGES_PER_SCAN, Math.floor(options.pageLimit!)))
+    : has("deep_ai_page_check")
+      ? ceiling
+      : has("advanced_page_check")
+        ? Math.max(2, Math.ceil(ceiling / 2))
+        : 2;
+  const deadlineMs = planLimited ? scanDeadlineMs(allowance) : ANALYSIS_DEADLINE_MS;
+
+  // One crawl serves every check and analyzer in this scan.
+  const crawl = new Crawl({ deadlineMs, maxPages: allowance, concurrency: CONCURRENCY });
+  const timedProbe = (url: string, ms: number) => crawl.probe(url, ms);
+
+  const { page: home, https } = await resolveHome(target, crawl);
 
   const origin = new URL(home.url).origin;
   const host = registrable(new URL(home.url).hostname);
@@ -529,16 +671,6 @@ export async function runAnalysis(
   ];
 
   // ── Choose what else to read, inside the page budget ─────────────
-  //
-  // The budget is the plan's, not a constant. Free reads the homepage and
-  // little else; Basic reads enough to find the policy pages; Pro's deep
-  // page check is precisely the promise of a wider crawl, so it gets one.
-  const ceiling = Math.max(2, ANALYSIS_MAX_PAGES);
-  const allowance = has("deep_ai_page_check")
-    ? ceiling
-    : has("advanced_page_check")
-      ? Math.max(2, Math.ceil(ceiling / 2))
-      : 2;
   const budget = allowance - 1;
 
   const priority: string[] = [];
@@ -553,10 +685,23 @@ export async function runAnalysis(
     (url) => !policyUrlSet.has(url) && url !== home.url,
   );
 
-  const toFetch = [
-    ...priority.slice(0, Math.max(1, budget - 2)),
-    ...contentCandidates.slice(0, Math.max(0, budget - Math.min(priority.length, budget - 2))),
-  ].slice(0, budget);
+  const toFetch = planLimited
+    ? []
+    : [
+        ...priority.slice(0, Math.max(1, budget - 2)),
+        ...contentCandidates.slice(0, Math.max(0, budget - Math.min(priority.length, budget - 2))),
+      ].slice(0, budget);
+
+  // Phase 5: the policy pages are read outside the allowance, and content
+  // pages are discovered breadth-first (homepage links, then theirs, then
+  // the sitemap) until the plan's pages-per-scan is reached, leaving time
+  // for the analysis itself.
+  const planReads: Promise<ReadOutcome[]> = planLimited
+    ? Promise.all([
+        Promise.all(priority.map((url) => readPage(url, crawl, { counted: false }))),
+        discoverContent({ crawl, home, origin, host, budget, exclude: new Set([...priority, home.url]), deadlineMs }),
+      ]).then(([policy, content]) => [...policy, ...content])
+    : Promise.resolve([]);
 
   // robots.txt is read for its own check, and again as an input to the
   // crawlability verdict and to find the sitemap — any one of the three
@@ -566,25 +711,20 @@ export async function runAnalysis(
 
   const [extraPages, robotsResult, sitemapHit, httpProbe, linkChecks, adsTxtResult] =
     await Promise.all([
-      inBatches(toFetch, CONCURRENCY, readPage),
+      Promise.all(toFetch.map((url) => readPage(url, crawl))).then(async (legacy) => [...legacy, ...(await planReads)]),
       (async () => {
         if (!wantsRobots) return null;
-        try {
-          const result = await fetchGuarded(`${origin}/robots.txt`, {
-            accept: "text/plain",
-            maxBytes: 64 * 1024,
-            timeoutMs: 8_000,
-          });
-          if (!result.ok || result.body.length === 0) return null;
-          return parseRobots(result.body);
-        } catch {
-          return null;
-        }
+        // The crawler has already read robots.txt for its own manners;
+        // this reuses that one response.
+        const result = await crawl.robotsFile();
+        if (!result || !result.ok || result.body.length === 0 || looksLikeHtml(result.contentType, result.body)) return null;
+        return parseRobots(result.body.slice(0, 64 * 1024));
       })(),
       (async () => {
         if (!has("sitemap_analysis")) return false;
+        // Read (not just HEAD) so the sitemap step below reuses this response.
         for (const path of ["/sitemap.xml", "/sitemap_index.xml", "/sitemap-index.xml"]) {
-          const found = await probe(`${origin}${path}`, 6_000);
+          const found = await crawl.resource(`${origin}${path}`, SITEMAP_FETCH);
           if (found?.ok) return true;
         }
         return false;
@@ -592,25 +732,19 @@ export async function runAnalysis(
       (async () => {
         if (!has("https_check")) return null;
         if (!https) return false;
-        try {
-          const result = await fetchGuarded(`http://${host}/`, {
-            maxBytes: 32 * 1024,
-            timeoutMs: 8_000,
-          });
-          return new URL(result.finalUrl).protocol === "https:";
-        } catch {
-          return null;
-        }
+        const result = await crawl.resource(`http://${host}/`, { maxBytes: 32 * 1024, timeoutMs: 8_000 });
+        return result ? new URL(result.finalUrl).protocol === "https:" : null;
       })(),
       (async (): Promise<{ sampled: number; broken: Array<{ url: string; status: number }> }> => {
         if (!has("advanced_page_check")) return { sampled: 0, broken: [] };
         const sample = internalUrls.filter((url) => url !== home.url).slice(0, 8);
         const results = await inBatches(sample, 4, async (url) => {
-          const found = await probe(url, 6_000);
-          return { url, status: found?.status ?? 0, ok: found?.ok ?? true };
+          const found = await timedProbe(url, 6_000);
+          return { url, status: found?.status ?? 0, ok: found?.ok ?? true, skipped: found === undefined };
         });
         return {
-          sampled: sample.length,
+          // A link we ran out of time to test was not sampled.
+          sampled: results.filter((entry) => !entry.skipped).length,
           broken: results
             .filter((entry) => !entry.ok && entry.status >= 400)
             .map((entry) => ({ url: entry.url, status: entry.status })),
@@ -618,17 +752,10 @@ export async function runAnalysis(
       })(),
       (async () => {
         if (!has("ad_density_analysis")) return null;
-        try {
-          const result = await fetchGuarded(`${origin}/ads.txt`, {
-            accept: "text/plain",
-            maxBytes: 64 * 1024,
-            timeoutMs: 8_000,
-          });
-          if (!result.ok) return parseAdsTxt("");
-          return parseAdsTxt(result.body);
-        } catch {
-          return parseAdsTxt("");
-        }
+        const result = await crawl.resource(`${origin}/ads.txt`, { accept: "text/plain", maxBytes: 64 * 1024, timeoutMs: 8_000 });
+        if (!result) return crawl.clock.partial() ? null : parseAdsTxt("");
+        if (!result.ok || looksLikeHtml(result.contentType, result.body)) return parseAdsTxt("");
+        return parseAdsTxt(result.body);
       })(),
     ]);
 
@@ -665,14 +792,15 @@ export async function runAnalysis(
       `${origin}/sitemap.xml`,
       `${origin}/sitemap_index.xml`,
     ];
-    sitemapReport = await readSitemap(addresses, host);
+    sitemapReport = await readSitemap(addresses, host, crawl);
     if (sitemapReport && sitemapReport.urls.length > 0) {
       const sample = sitemapReport.urls.slice(0, 6);
       const probes = await inBatches(sample, 3, async (url) => {
-        const found = await probe(url, 6_000);
-        return { url, ok: found?.ok ?? false };
+        const found = await timedProbe(url, 6_000);
+        return { url, ok: found?.ok ?? false, skipped: found === undefined };
       });
-      sitemapUnreachable = probes.filter((entry) => !entry.ok).map((entry) => entry.url);
+      // Out of time is not "unreachable".
+      sitemapUnreachable = probes.filter((entry) => !entry.ok && !entry.skipped).map((entry) => entry.url);
     }
   }
 
@@ -687,16 +815,30 @@ export async function runAnalysis(
     .map((page) => page.text)
     .join("\n\n");
 
-  const duplicates = has("duplicate_content_check") ? findDuplicates(readable) : null;
-  const ai = has("ai_content_check") ? estimateAiLikelihood(corpus) : null;
-  const human = has("ai_human_content_check") ? estimateHumanSignals(readable) : null;
-  const originality = has("originality_check")
-    ? originalitySignals(readable, duplicates?.share ?? 0)
-    : null;
-  const ads = has("ad_density_analysis") ? adDensity(readable) : null;
-  const structure = has("site_structure_analysis")
-    ? analyseStructure(readable, internalUrls)
-    : null;
+  // Each calculation is isolated: one that throws is recorded, and only
+  // the checks that read it report "error" — the rest of the scan goes on.
+  const signalErrors: SignalName[] = [];
+  const safely = <T,>(name: SignalName, enabled: boolean, compute: () => T): T | null => {
+    if (!enabled) return null;
+    try {
+      return compute();
+    } catch (error) {
+      console.error(`[analysis] ${name} calculation failed: ${describeError(error)}`);
+      signalErrors.push(name);
+      return null;
+    }
+  };
+
+  const duplicates = safely("duplicates", has("duplicate_content_check"), () => findDuplicates(readable));
+  const ai = safely("ai", has("ai_content_check"), () => estimateAiLikelihood(corpus));
+  const human = safely("human", has("ai_human_content_check"), () => estimateHumanSignals(readable));
+  const originality = safely("originality", has("originality_check"), () =>
+    originalitySignals(readable, duplicates?.share ?? 0),
+  );
+  const ads = safely("ads", has("ad_density_analysis"), () => adDensity(readable));
+  const structure = safely("structure", has("site_structure_analysis"), () =>
+    analyseStructure(readable, internalUrls),
+  );
 
   const snapshot: SiteSnapshot = {
     input: rawInput,
@@ -725,11 +867,51 @@ export async function runAnalysis(
     structure,
     sitemap: sitemapReport,
     sitemapUnreachable,
+    signalErrors,
   };
 
+  // ── Analyzers, over the same crawl ───────────────────────────────
+  // Only those whose feature this account holds are even called.
+  const homePage = crawl.pages()[0];
+  let analyzerRun: AnalyzerRun = { findings: [], featureVector: {}, ran: [] };
+  if (homePage) {
+    try {
+      analyzerRun = await runAnalyzers({
+        defs: options.analyzers ?? ANALYZERS,
+        features: active as ReadonlySet<string>,
+        crawl,
+        site: { origin, domain, host, home: homePage, https, policyLinks, internalUrls, snapshot },
+      });
+    } catch (error) {
+      // The runner isolates each analyzer; this is the last line of defence.
+      console.error(`[analysis] analyzers failed: ${describeError(error)}`);
+    }
+  }
+
+  // Content pages linked from what was read but not read themselves — a
+  // lower bound on what a larger page allowance would reach. Counted from
+  // links already in hand; nothing extra is fetched or run for it.
+  let unreadPages: number | undefined;
+  if (planLimited) {
+    const read = new Set(crawl.pages().map((page) => page.analysis.url.replace(/#.*$/, "")));
+    const unread = new Set<string>();
+    for (const page of crawl.pages()) {
+      for (const link of page.analysis.links) {
+        if (!link.internal || !link.absolute) continue;
+        const url = contentCandidate(link.absolute, host);
+        if (url && !read.has(url) && !policyUrlSet.has(link.absolute) && !policyUrlSet.has(url)) unread.add(url);
+      }
+    }
+    unreadPages = unread.size;
+  }
+
   return composeOutcome(snapshot, features, {
-    pagesFetched: pages.length,
-    pageUrls: pages.map((page) => page.url),
+    unreadPages,
+    pagesFetched: crawl.pages().length,
+    pageUrls: crawl.pages().map((page) => page.analysis.url),
+    partial: crawl.clock.partial(),
+    extraFindings: analyzerRun.findings,
+    featureVector: analyzerRun.featureVector,
   });
 }
 
@@ -741,15 +923,34 @@ export async function runAnalysis(
  * codepaths producing two slightly different report shapes is how a demo
  * stops being a faithful preview of the real thing.
  */
+/** A post-pass that fails is left out of the report rather than failing it. */
+function guarded<T extends object>(name: string, build: () => T): T | Record<string, never> {
+  try {
+    return build();
+  } catch (error) {
+    console.error(`[analysis] ${name} failed: ${describeError(error)}`);
+    return {};
+  }
+}
+
 export function composeOutcome(
   snapshot: SiteSnapshot,
   features: readonly FeatureKey[],
-  options: { pagesFetched: number; pageUrls: string[] },
+  options: {
+    pagesFetched: number;
+    pageUrls: string[];
+    partial?: boolean;
+    /** Report lines from analyzers, added after the built-in checks. */
+    extraFindings?: Finding[];
+    featureVector?: Record<string, number>;
+    /** Content pages found but not read within the plan's page allowance. */
+    unreadPages?: number;
+  },
 ): AnalysisOutcome {
   const active = new Set<FeatureKey>(features);
   const has = (feature: FeatureKey) => active.has(feature);
 
-  const findings = runChecks(snapshot, features);
+  const findings = [...runChecks(snapshot, features), ...(options.extraFindings ?? [])];
   const scored = scoreFindings(findings);
 
   const readable = snapshot.pages.filter((page) => page.ok && page.wordCount > 0);
@@ -757,18 +958,29 @@ export function composeOutcome(
 
   // ── Per-page scores, for the Pro page-by-page view ────────────────
   const pageScores: PageScore[] = has("page_by_page_analysis")
-    ? snapshot.pages.map((page) =>
-        scorePage(
-          page,
-          has("deep_ai_page_check") && page.wordCount >= 200
-            ? estimateAiLikelihood(page.text).score
-            : null,
-        ),
-      )
+    ? snapshot.pages.flatMap((page) => {
+        // One page that cannot be scored is left out, not the whole list.
+        try {
+          let aiScore: number | null = null;
+          if (has("deep_ai_page_check") && page.wordCount >= 200) {
+            try {
+              aiScore = estimateAiLikelihood(page.text).score;
+            } catch (error) {
+              console.error(`[analysis] page AI estimate failed: ${describeError(error)}`);
+            }
+          }
+          return [scorePage(page, aiScore)];
+        } catch (error) {
+          console.error(`[analysis] page score failed: ${describeError(error)}`);
+          return [];
+        }
+      })
     : [];
 
   const totalWords = readable.reduce((sum, page) => sum + page.wordCount, 0);
   const metrics: ReportMetrics = {
+    ...(options.partial ? { partial: true } : {}),
+    ...(typeof options.unreadPages === "number" ? { unreadPages: options.unreadPages } : {}),
     totalWords,
     averageWords: readable.length > 0 ? Math.round(totalWords / readable.length) : 0,
     ...(ai
@@ -789,8 +1001,14 @@ export function composeOutcome(
         }
       : {}),
     ...(has("advanced_page_check") ? { brokenLinks: snapshot.brokenLinks.length } : {}),
+    ...guarded("niche", () => {
+      const niche = classifyNiche(
+        readable.map((page) => ({ title: page.title, headings: [...page.headings1, ...page.headings2], text: page.text })),
+      );
+      return { niche: niche.niche, nicheConfidence: niche.confidence };
+    }),
     ...(has("policy_risk_detection")
-      ? (() => {
+      ? guarded("risk ranking", () => {
           const risks = detectRisks(findings);
           const level = risks.some((risk) => risk.level === "high")
             ? "high"
@@ -800,10 +1018,10 @@ export function composeOutcome(
                 ? "moderate"
                 : "low";
           return { risks, riskLevel: level as ReportMetrics["riskLevel"] };
-        })()
+        })
       : {}),
     ...(has("ai_recommendations")
-      ? { recommendations: buildRecommendations(findings) }
+      ? guarded("recommendations", () => ({ recommendations: buildRecommendations(findings) }))
       : {}),
   };
 
@@ -830,6 +1048,7 @@ export function composeOutcome(
     pages: pageScores,
     metrics,
     checksRun: findings.length,
+    featureVector: options.featureVector ?? {},
   };
 }
 
@@ -840,37 +1059,30 @@ export function composeOutcome(
  * fifty more requests for a number we already have well enough, and the
  * check text says plainly that we read the index rather than every child.
  */
+const SITEMAP_FETCH = { accept: "application/xml,text/xml", maxBytes: 512 * 1024, timeoutMs: 10_000 };
+
 async function readSitemap(
   addresses: string[],
   host: string,
+  crawl: Crawl,
 ): Promise<ReturnType<typeof parseSitemap> | null> {
   const tried = new Set<string>();
+  const xml = SITEMAP_FETCH;
   for (const address of addresses) {
     if (tried.has(address)) continue;
     tried.add(address);
+    if (crawl.clock.remaining() < 500) return null;
+    const result = await crawl.resource(address, xml);
+    if (!result || !result.ok || result.body.length === 0) continue;
     try {
-      const result = await fetchGuarded(address, {
-        accept: "application/xml,text/xml",
-        maxBytes: 512 * 1024,
-        timeoutMs: 10_000,
-      });
-      if (!result.ok || result.body.length === 0) continue;
       const report = parseSitemap(result.body, host);
       if (report.isIndex && report.children.length > 0 && report.urls.length === 0) {
         const child = report.children[0];
         if (child) {
-          try {
-            const nested = await fetchGuarded(child, {
-              accept: "application/xml,text/xml",
-              maxBytes: 512 * 1024,
-              timeoutMs: 10_000,
-            });
-            if (nested.ok && nested.body.length > 0) {
-              const inner = parseSitemap(nested.body, host);
-              return { ...report, urls: inner.urls, offDomain: inner.offDomain };
-            }
-          } catch {
-            /* fall through to the index-only report */
+          const nested = await crawl.resource(child, xml);
+          if (nested && nested.ok && nested.body.length > 0) {
+            const inner = parseSitemap(nested.body, host);
+            return { ...report, urls: inner.urls, offDomain: inner.offDomain };
           }
         }
       }

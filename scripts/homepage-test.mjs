@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
+import { isolatedServerEnv } from "./lib/server-env.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const dataDir = mkdtempSync(path.join(tmpdir(), "aec-home-"));
@@ -22,7 +23,7 @@ const port = 5600 + Math.floor(Math.random() * 300);
 const base = `http://127.0.0.1:${port}`;
 const env = { ...process.env, NODE_ENV: "production", DATA_DIR: dataDir, AUTH_SECRET: "test-auth-secret-that-is-long-enough-to-be-safe-12345", CHECKOUT_ALERTS_BACKGROUND: "off" };
 for (const name of ["PAYMENTS_MODE", "ADMIN_EMAIL", "ADMIN_PASSWORD"]) delete env[name];
-const server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "-p", String(port)], { cwd: projectRoot, env, stdio: "ignore" });
+const server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "-p", String(port)], { cwd: projectRoot, env: isolatedServerEnv(env), stdio: "ignore" });
 
 let passed = 0;
 async function check(name, fn) {
@@ -55,7 +56,10 @@ try {
     assert.match(text, /<nav aria-label="Main"/, "navigation bar");
     assert.match(text, /<footer/, "footer");
     const ids = [...text.matchAll(/<section[^>]*id="([^"]+)"/g)].map((m) => m[1]);
-    assert.deepEqual(ids, ["top", "features", "report", "process", "pricing", "guides", "faq"]);
+    // The section order of the homepage as it ships (the "report" and
+    // "guides" sections this test first listed were later replaced by
+    // "sample-report" and "approval-results" in the homepage design).
+    assert.deepEqual(ids, ["top", "features", "sample-report", "process", "approval-results", "pricing", "faq"]);
     assert.ok(text.indexOf('id="faq"') < text.indexOf("<footer"), "the FAQ is the last section before the footer");
   });
 
@@ -113,13 +117,14 @@ try {
     }
   });
 
-  await check("6 guides and FAQ are real content, linked from the shared footer", async () => {
+  await check("6 every navigation and footer link into the homepage lands on a section that exists", async () => {
     const home = (await get("/")).text;
-    for (const id of ["guide-rejections", "guide-required-pages", "guide-ads-txt", "guide-content"]) assert.match(home, new RegExp(`id="${id}"`));
-    assert.match(home, /f08c47fec0942fa0/, "the real AdSense ads.txt line");
+    const ids = new Set([...home.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]));
     const footer = (await get("/pricing")).text;
-    assert.match(footer, /href="\/#guide-ads-txt"/);
-    assert.match(footer, /href="\/#report"/);
+    const anchors = [...footer.matchAll(/href="\/#([^"]+)"/g)].map((m) => m[1]);
+    assert.ok(anchors.length >= 5, "footer anchors found");
+    for (const anchor of anchors) assert.ok(ids.has(anchor), `link /#${anchor} has a target`);
+    assert.ok(anchors.includes("sample-report") && anchors.includes("faq"));
   });
 
   console.log(`homepage redesign: passed (${passed} checks)`);

@@ -228,8 +228,8 @@ export function SignupForm({ next }: { next: string }) {
       </Button>
 
       <p className="text-[0.8125rem] leading-relaxed text-cloud-600">
-        Next, we'll email you a 6-digit code to confirm your address. The free plan is
-        added once you've confirmed it — no card needed.
+        Next, we&apos;ll email you a 6-digit code to confirm your address. The free plan is
+        added once you&apos;ve confirmed it — no card needed.
       </p>
     </form>
   );

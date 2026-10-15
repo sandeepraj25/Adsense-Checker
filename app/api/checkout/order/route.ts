@@ -4,7 +4,9 @@ import { accountBlock } from "@/lib/entitlement";
 import { jsonError, jsonOk, jsonServerError, readJson, str } from "@/lib/http";
 import { checkoutOptions, checkoutReturnUrl, startCheckout } from "@/lib/payments";
 import { parseCurrency } from "@/lib/money";
-import { planPrice } from "@/lib/plans";
+import { isBillingCycle, type BillingCycle } from "@/lib/billing/cycle";
+import { cyclePrice } from "@/lib/billing/offer";
+import { yearlyBillingEnabled } from "@/lib/billing/yearly-settings";
 import { siteCurrency } from "@/lib/site-currency";
 import { markPaymentStarted } from "@/lib/alerts/checkout";
 import { getPlan } from "@/lib/plan-catalogue";
@@ -108,10 +110,23 @@ export async function POST(request: Request) {
     ? requested
     : (options.find((option) => option.currencies.includes(currency)) ?? options[0]).id;
 
+  // Monthly unless the form says yearly. It only selects which configured
+  // price applies; anything else is refused rather than mapped.
+  const rawCycle = body.billingCycle;
+  if (rawCycle !== undefined && rawCycle !== null && rawCycle !== "" && !isBillingCycle(rawCycle)) {
+    return jsonError("VALIDATION_ERROR", "Choose monthly or yearly billing.");
+  }
+  const billingCycle: BillingCycle = rawCycle === "yearly" ? "yearly" : "monthly";
+
   // Checked here, in the same order as before: payment availability first.
-  const price = planPrice(plan, currency);
+  const price = cyclePrice(plan, currency, billingCycle, yearlyBillingEnabled());
   if (price === null || price <= 0) {
-    return jsonError("PRICE_NOT_CONFIGURED", `The ${plan.name} plan can't be bought right now. Nothing has been charged.`);
+    return jsonError(
+      "PRICE_NOT_CONFIGURED",
+      billingCycle === "yearly"
+        ? `The ${plan.name} plan isn't available yearly right now. Nothing has been charged — choose monthly billing instead.`
+        : `The ${plan.name} plan can't be bought right now. Nothing has been charged.`,
+    );
   }
   if (body.expectedAmount !== undefined && body.expectedAmount !== null && body.expectedAmount !== price) {
     return jsonError("PRICE_CHANGED", PRICE_CHANGED_MESSAGE, { extra: { currency } });
@@ -127,6 +142,7 @@ export async function POST(request: Request) {
       customerEmail: user.email,
       billing: billing.details,
       idempotencyKey: attempt ? attempt.toLowerCase() : undefined,
+      billingCycle,
       // The gateway must send the browser back to the host that holds
       // the (host-only) session cookie, or the return lands logged out.
       returnUrl: checkoutReturnUrl(request),
@@ -153,7 +169,7 @@ export async function POST(request: Request) {
     trackServerEvent("payment_attempted", {
       key: `attempt:${result.orderId}`,
       userId: user.id,
-      props: { plan: plan.id, currency: result.currency, gateway: result.gateway, mode: result.simulated ? "mock" : "live" },
+      props: { plan: plan.id, currency: result.currency, gateway: result.gateway, mode: result.simulated ? "mock" : "live", cycle: result.billingCycle },
       context: requestContext(request, clientIp(request)),
     });
 
@@ -165,6 +181,7 @@ export async function POST(request: Request) {
       currency: result.currency,
       planId: result.planId,
       planName: result.planName,
+      billingCycle: result.billingCycle,
       simulated: result.simulated,
       replayed: Boolean(result.replayed),
       // Narrow by construction: an id, a public key, or a redirect. No

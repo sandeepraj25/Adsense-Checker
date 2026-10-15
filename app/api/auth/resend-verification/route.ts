@@ -1,6 +1,7 @@
 import { currentPending, sendFreshCode } from "@/lib/auth/email-verification";
 import { jsonError, jsonOk } from "@/lib/http";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
+import { emailLinkOrigin } from "@/lib/env";
 import { requestOrigin } from "@/lib/request-origin";
 
 export const runtime = "nodejs";
@@ -40,7 +41,8 @@ export async function POST(request: Request) {
     );
   }
 
-  const origin = requestOrigin(request.headers, request.url);
+  // Links in the email point at the configured site, not the Host header.
+  const origin = emailLinkOrigin(requestOrigin(request.headers, request.url));
   const sent = await sendFreshCode(pending, `${origin}/login`);
 
   if (!sent.ok) {

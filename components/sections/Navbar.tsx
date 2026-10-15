@@ -20,7 +20,9 @@ const links = [
   // These two used to point at #tools and #report, which do not exist.
   { label: "Tools", href: "/#features" },
   { label: "Team", href: "/team" },
-  { label: "Success Stories", href: "/#approval-gallery" },
+  // The homepage shows approval results in #approval-results; the older
+  // #approval-gallery section is no longer rendered there.
+  { label: "Success Stories", href: "/#approval-results" },
 ];
 
 /**

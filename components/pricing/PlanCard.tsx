@@ -5,6 +5,8 @@ import { cn } from "@/lib/cn";
 import { formatMoney, type Currency } from "@/lib/money";
 import { checkCountFor } from "@/lib/analysis/checks";
 import { FEATURE_META, planPrice, type Plan } from "@/lib/plans";
+import type { BillingCycle } from "@/lib/billing/cycle";
+import type { YearlyOffer } from "@/lib/billing/offer";
 
 export function PlanCard({
   plan,
@@ -13,9 +15,15 @@ export function PlanCard({
   inherits,
   cta,
   className,
+  cycle = "monthly",
+  yearly = null,
 }: {
   plan: Plan;
   currency?: Currency;
+  /** The toggle's position. */
+  cycle?: BillingCycle;
+  /** This plan's yearly offer, when the toggle is on yearly and one exists. */
+  yearly?: YearlyOffer | null;
   current?: boolean;
   inherits?: string;
   cta: React.ReactNode;
@@ -30,9 +38,13 @@ export function PlanCard({
   return (
     <article
       className={cn(
-        "relative flex min-w-0 flex-col overflow-hidden rounded-xl border border-ink-700/80 bg-white p-4 text-slate-900 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-lg sm:p-5",
-        featured &&
-          "border-slate-800 bg-[#11151b] text-white shadow-xl hover:shadow-2xl",
+        "relative flex min-w-0 flex-col overflow-hidden rounded-xl border p-4 transition duration-200 hover:-translate-y-0.5 sm:p-5",
+        // One set or the other: cn() does not resolve conflicting classes,
+        // so listing both let bg-white win and left the featured card's
+        // white text on a white card.
+        featured
+          ? "border-slate-800 bg-[#11151b] text-white shadow-xl hover:shadow-2xl"
+          : "border-ink-700/80 bg-white text-slate-900 shadow-sm hover:shadow-lg",
         current &&
           !featured &&
           "border-azure-500 ring-1 ring-azure-500/20",
@@ -127,6 +139,25 @@ export function PlanCard({
             >
               Not available
             </span>
+          ) : yearly && !free ? (
+            <>
+              <span
+                className={cn(
+                  "text-3xl font-bold leading-none tracking-tight text-slate-950 sm:text-[2rem]",
+                  featured && "text-white",
+                )}
+              >
+                {formatMoney(yearly.price, currency)}
+              </span>
+              <span
+                className={cn(
+                  "text-xs text-slate-500",
+                  featured && "text-slate-400",
+                )}
+              >
+                /year
+              </span>
+            </>
           ) : (
             <>
               <span
@@ -149,13 +180,41 @@ export function PlanCard({
           )}
         </div>
 
+        {cycle === "yearly" && !free && price !== null ? (
+          <p
+            className={cn(
+              "mt-2 flex flex-wrap items-center gap-1.5 text-xs leading-5 text-slate-500",
+              featured && "text-slate-400",
+            )}
+          >
+            {yearly ? (
+              <>
+                <span>≈ {formatMoney(yearly.perMonth, currency)}/month, billed yearly</span>
+                {yearly.discount ? (
+                  <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                    Save {yearly.discount}%
+                  </span>
+                ) : null}
+                {yearly.badge ? (
+                  <span className="rounded-full bg-orange-50 px-2 py-0.5 text-[10px] font-semibold text-orange-700">
+                    {yearly.badge}
+                  </span>
+                ) : null}
+              </>
+            ) : (
+              <span>Billed monthly — no yearly option for this plan</span>
+            )}
+          </p>
+        ) : null}
+
         <p
           className={cn(
             "mt-3 text-xs leading-5 text-slate-500",
             featured && "text-slate-400",
           )}
         >
-          {plan.scanLimit} scans/month · {plan.siteLimit}{" "}
+          {plan.scanLimit} scans/month · {plan.pagesPerScan}{" "}
+          {plan.pagesPerScan === 1 ? "page" : "pages"}/scan · {plan.siteLimit}{" "}
           {plan.siteLimit === 1 ? "website" : "websites"} ·{" "}
           {checks} checks
         </p>

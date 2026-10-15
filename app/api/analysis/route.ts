@@ -4,8 +4,12 @@ import { jsonError, jsonOk, readJson, str } from "@/lib/http";
 import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
-/** A shallow crawl of six pages plus link probing can take a while. */
-export const maxDuration = 60;
+/**
+ * The request only sets the scan up (plan, limits, quota) and answers with
+ * the report id; the scan runs as a background job (lib/scans/jobs.ts) and
+ * the page polls /api/reports/[id] until it is complete or failed.
+ */
+export const maxDuration = 30;
 
 export async function POST(request: Request) {
   const user = await optionalUser();
@@ -32,11 +36,16 @@ export async function POST(request: Request) {
   const result = await startAudit(user, url);
   if (!result.ok) return jsonError(result.code, result.message);
 
-  return jsonOk({
-    reportId: result.report.id,
-    ref: result.report.ref,
-    score: result.report.score,
-    verdict: result.report.verdict,
-    demo: result.demo,
-  });
+  return jsonOk(
+    {
+      reportId: result.report.id,
+      ref: result.report.ref,
+      state: result.report.state,
+      queued: Boolean(result.queued),
+      score: result.report.score,
+      verdict: result.report.verdict,
+      demo: result.demo,
+    },
+    result.queued ? 202 : 200,
+  );
 }
