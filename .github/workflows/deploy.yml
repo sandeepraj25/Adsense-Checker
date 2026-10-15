@@ -37,8 +37,7 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts
-
+ssh-keyscan -4 -H 130.210.54.193 >> ~/.ssh/known_hosts
       - name: Deploy on server
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
